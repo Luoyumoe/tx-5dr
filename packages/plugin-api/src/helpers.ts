@@ -621,6 +621,15 @@ export interface PanelMeta {
    * - true / undefined: normal display
    */
   visible?: boolean;
+
+  /**
+   * Optional toolbar accent tone.
+   *
+   * The current host uses this on `radio-control-toolbar` iframe entries to
+   * tint the button when the plugin wants to signal status such as alerts or
+   * recent activity. Other panel hosts may ignore this field.
+   */
+  tone?: 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'danger';
 }
 
 /**
@@ -638,6 +647,12 @@ export interface UIBridge {
    * same keys.
    */
   setPanelMeta(panelId: string, meta: PanelMeta): void;
+
+  /**
+   * Updates the panel's display metadata at runtime for a specific logged-in
+   * user token. This overlays any global metadata from {@link setPanelMeta}.
+   */
+  setPanelMetaForUser(panelId: string, tokenId: string, meta: PanelMeta): void;
 
   /**
    * Replaces one runtime-owned group of plugin UI panels for this plugin

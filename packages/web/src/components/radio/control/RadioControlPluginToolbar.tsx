@@ -31,7 +31,7 @@ import { PluginIframeHost } from '../../plugins/PluginIframeHost';
 const GLOBAL_PLUGIN_OPERATOR_ID = '__global__';
 const RADIO_CONTROL_TOOLBAR_SLOT = 'radio-control-toolbar';
 
-const TOOLBAR_BUTTON_CLASS = 'text-default-400 min-w-unit-6 min-w-6 w-6 h-6';
+const TOOLBAR_BUTTON_CLASS = 'min-w-unit-6 min-w-6 w-6 h-6';
 const TOOLBAR_ICON_CLASS = 'text-xs';
 
 const POPOVER_SIZE_CLASS: Record<'sm' | 'md' | 'lg', string> = {
@@ -58,6 +58,18 @@ const MODAL_MIN_HEIGHT: Record<'sm' | 'md' | 'lg', number> = {
   sm: 260,
   md: 420,
   lg: 560,
+};
+
+type ToolbarTone = NonNullable<PanelMeta['tone']>;
+
+const DEFAULT_TOOLBAR_TONE: ToolbarTone = 'default';
+const TOOLBAR_TONE_CLASS: Record<ToolbarTone, string> = {
+  default: 'text-default-400',
+  primary: 'text-primary',
+  secondary: 'text-secondary',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
 };
 
 interface ToolbarIconTooltipProps {
@@ -141,6 +153,10 @@ export function resolveRadioToolbarIcon(rawIcon: string | undefined): IconDefini
   }
 
   return getIconFromPack(fas, icon) ?? getIconFromPack(fab, icon) ?? faPuzzlePiece;
+}
+
+export function resolveRadioToolbarTone(rawTone: PanelMeta['tone']): ToolbarTone {
+  return rawTone ?? DEFAULT_TOOLBAR_TONE;
 }
 
 function pluginMatchesToolbar(plugin: PluginStatus): boolean {
@@ -257,12 +273,13 @@ export function getRadioControlToolbarEntries(params: {
 const RadioControlToolbarButton: React.FC<{ entry: RadioControlToolbarEntry }> = ({ entry }) => {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const icon = resolveRadioToolbarIcon(entry.icon);
+  const tone = resolveRadioToolbarTone(entry.meta.tone);
   const commonButton = (
     <Button
       isIconOnly
       variant="light"
       size="sm"
-      className={TOOLBAR_BUTTON_CLASS}
+      className={`${TOOLBAR_BUTTON_CLASS} ${TOOLBAR_TONE_CLASS[tone]}`}
       aria-label={entry.resolvedTitle}
       onPress={entry.openMode === 'modal' ? () => setIsModalOpen(true) : undefined}
     >
