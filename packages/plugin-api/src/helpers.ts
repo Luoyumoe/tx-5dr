@@ -613,14 +613,23 @@ export interface PanelMeta {
    * For example, if the plugin locale defines `"statusActive": "Active: {{count}}"`,
    * pass `{ count: 5 }` to render "Active: 5".
    */
-  titleValues?: Record<string, unknown>;
+  titleValues?: Record<string, unknown> | null;
 
   /**
    * Controls whether the panel is visible.
    * - false: the host hides the panel entirely (it takes no layout space)
    * - true / undefined: normal display
    */
-  visible?: boolean;
+  visible?: boolean | null;
+
+  /**
+   * Optional toolbar accent tone.
+   *
+   * The current host uses this on `radio-control-toolbar` iframe entries to
+   * tint the button when the plugin wants to signal status such as alerts or
+   * recent activity. Other panel hosts may ignore this field.
+   */
+  tone?: 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | null;
 }
 
 /**
@@ -635,9 +644,18 @@ export interface UIBridge {
   /**
    * Updates the panel's display metadata at runtime. All fields are optional
    * and use patch semantics. Subsequent calls overwrite previous values for the
-   * same keys.
+   * same keys. Pass `null` for a field to clear the runtime value and restore
+   * the inherited/static value.
    */
   setPanelMeta(panelId: string, meta: PanelMeta): void;
+
+  /**
+   * Updates the panel's display metadata at runtime for a specific logged-in
+   * user token. This overlays any global metadata from {@link setPanelMeta}.
+   * Pass `null` for a field to clear the user-scoped override and inherit the
+   * global value again.
+   */
+  setPanelMetaForUser?(panelId: string, tokenId: string, meta: PanelMeta): void;
 
   /**
    * Replaces one runtime-owned group of plugin UI panels for this plugin

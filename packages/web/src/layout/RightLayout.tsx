@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Button,
   Popover,
@@ -20,6 +20,49 @@ import { ServerHealthButton } from '../components/system/ServerHealthButton';
 import { SettingsButton } from '../components/common/SettingsButton';
 import { useTranslation } from 'react-i18next';
 import { OPEN_ACCOUNT_SECURITY_MODAL_EVENT } from '../components/app/GlobalModalHost';
+import {
+  clampRightLayoutSplitPercent,
+  DEFAULT_RIGHT_LAYOUT_SPLIT_PERCENT,
+  getStoredRightLayoutSplitPercent,
+  isActiveRightLayoutSplitPointer,
+  getRightLayoutPaneHeights,
+  RIGHT_LAYOUT_SPLIT_DIVIDER_HEIGHT_PX,
+  saveRightLayoutSplitPercent,
+  shouldPersistRightLayoutSplit,
+  shouldStartRightLayoutSplitPointerDrag,
+} from './rightLayoutSplitPreferences';
+
+function RightLayoutPaneDivider({
+  isDragging,
+  onPointerDown,
+}: {
+  isDragging: boolean;
+  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      className={[
+        'group touch-none flex-shrink-0 cursor-row-resize transition-all duration-200',
+        isDragging ? 'bg-primary-400' : 'bg-transparent hover:bg-primary-200',
+      ].join(' ')}
+      style={{ height: `${RIGHT_LAYOUT_SPLIT_DIVIDER_HEIGHT_PX}px` }}
+      onPointerDown={onPointerDown}
+    >
+      <div className="relative h-full w-full">
+        <div
+          className={[
+            'absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 transform gap-1 transition-opacity duration-200',
+            isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          ].join(' ')}
+        >
+          <div className="h-0.5 w-6 rounded-full bg-default-600"></div>
+          <div className="h-0.5 w-6 rounded-full bg-default-600"></div>
+          <div className="h-0.5 w-6 rounded-full bg-default-600"></div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export const RightLayout: React.FC = () => {
   const { t } = useTranslation('common');
@@ -33,6 +76,14 @@ export const RightLayout: React.FC = () => {
   const { state: authState, logout } = useAuth();
   const [selectedMode, setSelectedMode] = useState<string>('auto5');
   const [loginPopoverOpen, setLoginPopoverOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [splitPercent, setSplitPercent] = useState(() => getStoredRightLayoutSplitPercent());
+  const [workspaceHeight, setWorkspaceHeight] = useState(0);
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  const splitWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const activeSplitPointerIdRef = useRef<number | null>(null);
+  const dragStartYRef = useRef(0);
+  const dragStartSplitPercentRef = useRef(DEFAULT_RIGHT_LAYOUT_SPLIT_PERCENT);
   const showAuthenticatedIdentity = Boolean(authState.role) && (Boolean(authState.jwt) || !authState.authEnabled);
   const showLoginEntry = authState.authEnabled && !authState.jwt && authState.isPublicViewer;
   const automationOperatorId = currentOperatorId || operators[0]?.id;
@@ -62,8 +113,152 @@ export const RightLayout: React.FC = () => {
     window.dispatchEvent(new Event(OPEN_ACCOUNT_SECURITY_MODAL_EVENT));
   }, []);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    setIsMobile(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsMobile(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) {
+      setWorkspaceHeight(0);
+      return;
+    }
+
+    const measureWorkspace = () => {
+      const nextHeight = splitWorkspaceRef.current?.clientHeight ?? 0;
+      setWorkspaceHeight((currentHeight) => currentHeight === nextHeight ? currentHeight : nextHeight);
+    };
+
+    measureWorkspace();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+        measureWorkspace();
+      });
+
+    if (resizeObserver && splitWorkspaceRef.current) {
+      resizeObserver.observe(splitWorkspaceRef.current);
+    }
+
+    window.addEventListener('resize', measureWorkspace);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', measureWorkspace);
+    };
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (isMobile) {
+      return;
+    }
+
+    setSplitPercent((currentSplitPercent) => {
+      if (workspaceHeight <= 0) {
+        return currentSplitPercent;
+      }
+
+      return clampRightLayoutSplitPercent({
+        splitPercent: currentSplitPercent,
+        containerHeight: workspaceHeight,
+      });
+    });
+  }, [isMobile, workspaceHeight]);
+
+  const handleSplitPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!shouldStartRightLayoutSplitPointerDrag({
+      isMobile,
+      isPrimary: event.isPrimary,
+      pointerType: event.pointerType,
+      button: event.button,
+    })) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    activeSplitPointerIdRef.current = event.pointerId;
+    dragStartYRef.current = event.clientY;
+    dragStartSplitPercentRef.current = splitPercent;
+    setIsDraggingSplit(true);
+  }, [isMobile, splitPercent]);
+
+  const handleSplitPointerEnd = useCallback((event: PointerEvent) => {
+    if (!isActiveRightLayoutSplitPointer(activeSplitPointerIdRef.current, event.pointerId)) {
+      return;
+    }
+    activeSplitPointerIdRef.current = null;
+    setIsDraggingSplit(false);
+  }, []);
+
+  const handleSplitPointerMove = useCallback((event: PointerEvent) => {
+    if (!isActiveRightLayoutSplitPointer(activeSplitPointerIdRef.current, event.pointerId)) {
+      return;
+    }
+    if (!splitWorkspaceRef.current) {
+      return;
+    }
+
+    const containerHeight = splitWorkspaceRef.current.clientHeight;
+    if (containerHeight <= 0) {
+      return;
+    }
+
+    const deltaPercent = ((event.clientY - dragStartYRef.current) / containerHeight) * 100;
+    setSplitPercent(clampRightLayoutSplitPercent({
+      splitPercent: dragStartSplitPercentRef.current + deltaPercent,
+      containerHeight,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!isDraggingSplit) {
+      return;
+    }
+
+    document.addEventListener('pointermove', handleSplitPointerMove);
+    document.addEventListener('pointerup', handleSplitPointerEnd);
+    document.addEventListener('pointercancel', handleSplitPointerEnd);
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('pointermove', handleSplitPointerMove);
+      document.removeEventListener('pointerup', handleSplitPointerEnd);
+      document.removeEventListener('pointercancel', handleSplitPointerEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [handleSplitPointerEnd, handleSplitPointerMove, isDraggingSplit]);
+
+  useEffect(() => {
+    if (!shouldPersistRightLayoutSplit({ isMobile, isDraggingSplit })) {
+      return;
+    }
+
+    saveRightLayoutSplitPercent(splitPercent);
+  }, [isDraggingSplit, isMobile, splitPercent]);
+
+  const desktopPaneHeights = getRightLayoutPaneHeights({
+    splitPercent,
+    containerHeight: workspaceHeight,
+  });
+
   return (
-    <div className="h-full min-h-0 overflow-hidden flex flex-col">
+    <>
+      {isDraggingSplit && (
+        <div className="fixed inset-0 z-[9999] cursor-row-resize bg-transparent" />
+      )}
+      <div className="h-full min-h-0 overflow-hidden flex flex-col">
       {/* 顶部工具栏 */}
       <div
         className="flex-shrink-0 flex justify-between items-center p-1 px-2 md:p-2 md:px-3"
@@ -176,21 +371,40 @@ export const RightLayout: React.FC = () => {
       
       {/* 主内容区域 */}
       <div className="flex-1 p-2 pt-0 md:p-5 md:pt-0 flex flex-col gap-2 md:gap-4 min-h-0 overflow-hidden">
-        {/* 和我有关的通联信息 - 占据剩余空间 */}
-        <div className="relative z-0 flex-1 min-h-0 overflow-hidden">
-          <MyRelatedFramesTable className="h-full" />
-        </div>
-        
-        {/* 操作员列表 - 固定高度 */}
-        <div className="relative z-10 flex-shrink-0">
-          <RadioOperatorList onCreateOperator={handleCreateOperator} />
-        </div>
-        
-        {/* 电台控制 - 固定高度 */}
+        {isMobile ? (
+          <>
+            <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
+              <MyRelatedFramesTable className="h-full" />
+            </div>
+            <div className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pt-1 pb-2">
+              <RadioOperatorList onCreateOperator={handleCreateOperator} />
+            </div>
+          </>
+        ) : (
+          <div ref={splitWorkspaceRef} className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+              <div
+                className="relative z-0 min-h-0 overflow-hidden"
+                style={workspaceHeight > 0 ? { height: `${desktopPaneHeights.topPaneHeightPx}px` } : { height: `${splitPercent}%` }}
+              >
+                <MyRelatedFramesTable className="h-full" />
+              </div>
+              <RightLayoutPaneDivider
+                isDragging={isDraggingSplit}
+                onPointerDown={handleSplitPointerDown}
+              />
+              <div className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pt-1 pb-2 [scrollbar-gutter:stable]">
+                <RadioOperatorList onCreateOperator={handleCreateOperator} />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="relative z-10 flex-shrink-0">
           <RadioControl onOpenRadioSettings={handleOpenRadioSettings} />
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };

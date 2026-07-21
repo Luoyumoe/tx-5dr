@@ -31,7 +31,7 @@ import { PluginIframeHost } from '../../plugins/PluginIframeHost';
 const GLOBAL_PLUGIN_OPERATOR_ID = '__global__';
 const RADIO_CONTROL_TOOLBAR_SLOT = 'radio-control-toolbar';
 
-const TOOLBAR_BUTTON_CLASS = 'text-default-400 min-w-unit-6 min-w-6 w-6 h-6';
+const TOOLBAR_BUTTON_CLASS = 'min-w-unit-6 min-w-6 w-6 h-6';
 const TOOLBAR_ICON_CLASS = 'text-xs';
 
 const POPOVER_SIZE_CLASS: Record<'sm' | 'md' | 'lg', string> = {
@@ -58,6 +58,34 @@ const MODAL_MIN_HEIGHT: Record<'sm' | 'md' | 'lg', number> = {
   sm: 260,
   md: 420,
   lg: 560,
+};
+
+type ToolbarTone = NonNullable<PanelMeta['tone']>;
+
+const DEFAULT_TOOLBAR_TONE: ToolbarTone = 'default';
+const TOOLBAR_TONE_CLASS: Record<ToolbarTone, string> = {
+  default: 'text-default-400',
+  primary: 'text-primary',
+  secondary: 'text-secondary',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+};
+const TOOLBAR_TONE_STATUS: Record<ToolbarTone, string | null> = {
+  default: null,
+  primary: 'Active status',
+  secondary: 'Secondary status',
+  success: 'Success status',
+  warning: 'Warning status',
+  danger: 'Alert status',
+};
+const TOOLBAR_TONE_MARK: Record<ToolbarTone, string> = {
+  default: '',
+  primary: 'i',
+  secondary: '*',
+  success: '+',
+  warning: '!',
+  danger: '!',
 };
 
 interface ToolbarIconTooltipProps {
@@ -141,6 +169,14 @@ export function resolveRadioToolbarIcon(rawIcon: string | undefined): IconDefini
   }
 
   return getIconFromPack(fas, icon) ?? getIconFromPack(fab, icon) ?? faPuzzlePiece;
+}
+
+export function resolveRadioToolbarTone(rawTone: PanelMeta['tone']): ToolbarTone {
+  return rawTone ?? DEFAULT_TOOLBAR_TONE;
+}
+
+export function getRadioToolbarToneStatus(tone: ToolbarTone): string | null {
+  return TOOLBAR_TONE_STATUS[tone];
 }
 
 function pluginMatchesToolbar(plugin: PluginStatus): boolean {
@@ -257,16 +293,27 @@ export function getRadioControlToolbarEntries(params: {
 const RadioControlToolbarButton: React.FC<{ entry: RadioControlToolbarEntry }> = ({ entry }) => {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const icon = resolveRadioToolbarIcon(entry.icon);
+  const tone = resolveRadioToolbarTone(entry.meta.tone);
+  const toneStatus = getRadioToolbarToneStatus(tone);
+  const ariaLabel = toneStatus ? `${entry.resolvedTitle} (${toneStatus})` : entry.resolvedTitle;
   const commonButton = (
     <Button
       isIconOnly
       variant="light"
       size="sm"
-      className={TOOLBAR_BUTTON_CLASS}
-      aria-label={entry.resolvedTitle}
+      className={`${TOOLBAR_BUTTON_CLASS} relative ${TOOLBAR_TONE_CLASS[tone]}`}
+      aria-label={ariaLabel}
       onPress={entry.openMode === 'modal' ? () => setIsModalOpen(true) : undefined}
     >
       <FontAwesomeIcon icon={icon} className={TOOLBAR_ICON_CLASS} />
+      {toneStatus ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-3 min-w-3 items-center justify-center rounded-full bg-content1 px-0.5 text-[8px] font-bold leading-none shadow-sm ring-1 ring-background"
+        >
+          {TOOLBAR_TONE_MARK[tone]}
+        </span>
+      ) : null}
     </Button>
   );
 
