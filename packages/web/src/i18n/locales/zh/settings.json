@@ -141,6 +141,8 @@
       "UNKNOWN_ERROR": "连接测试失败，请检查配置"
     },
     "pttMethod": "PTT 方法",
+    "pttNone": "无",
+    "pttNoneDesc": "不使用电台 PTT 控制。由外部软件或电台自身管理发射状态。",
     "pttCat": "CAT 命令（推荐）",
     "pttVox": "VOX 声控",
     "pttDtrDisabled": "DTR 引脚（需串口连接）",

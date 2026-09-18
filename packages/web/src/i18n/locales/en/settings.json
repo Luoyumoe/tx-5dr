@@ -141,6 +141,8 @@
       "UNKNOWN_ERROR": "Connection test failed, please check configuration"
     },
     "pttMethod": "PTT Method",
+    "pttNone": "None",
+    "pttNoneDesc": "Do not use TX-5DR PTT control. External software or the radio manages transmit state.",
     "pttCat": "CAT Command (Recommended)",
     "pttVox": "VOX",
     "pttDtrDisabled": "DTR Pin (serial required)",
