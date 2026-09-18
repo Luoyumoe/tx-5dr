@@ -141,6 +141,8 @@
       "UNKNOWN_ERROR": "接続テストに失敗しました。構成を確認してください"
     },
     "pttMethod": "PTT方式",
+    "pttNone": "なし",
+    "pttNoneDesc": "TX-5DR の PTT 制御を使用しません。外部ソフトウェアまたは無線機が送信状態を管理します。",
     "pttCat": "CATコマンド(推奨)",
     "pttVox": "VOXボイスコントロール",
     "pttDtrDisabled": "DTR ピン (シリアル ポート接続が必要)",

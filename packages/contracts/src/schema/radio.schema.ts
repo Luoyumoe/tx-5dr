@@ -257,12 +257,13 @@ export const DigitalModeRadioModePreferenceSchema = z.enum(['none', 'usb', 'usb-
 /**
  * PTT (Push-to-Talk) 方法Schema
  *
+ * - none: 不使用 TX-5DR 的 PTT 控制，由外部软件或电台自身处理
  * - cat: 通过 CAT 命令控制 PTT（Hamlib RIG 类型，推荐）
  * - vox: 不主动控制 PTT，电台通过检测音频信号自动发射（适用于 SignaLink USB 等）
  * - dtr: 通过 RS-232 DTR 引脚控制 PTT（适用于古老电台或外部功放）
  * - rts: 通过 RS-232 RTS 引脚控制 PTT（适用于古老电台或外部功放）
  */
-export const PttMethodSchema = z.enum(['cat', 'vox', 'dtr', 'rts']);
+export const PttMethodSchema = z.enum(['none', 'cat', 'vox', 'dtr', 'rts']);
 
 /**
  * 虚拟频差（Virtual Frequency Offset / "Fake It" Split）配置Schema
