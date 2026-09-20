@@ -77,6 +77,47 @@ describe('VoiceTxOutputPipeline', () => {
     expect(outputBuffered.every((value) => value <= 80)).toBe(true);
   });
 
+  it('caps auto RtAudio device lead for low-latency speech', async () => {
+    vi.useFakeTimers({
+      now: new Date('2026-05-01T00:00:00.000Z'),
+      toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'],
+    });
+    const chunkSink = { ...sink, outputBufferSize: 960 };
+    const policy = resolveVoiceTxBufferPolicy({ profile: 'auto' });
+    let underruns = 0;
+    const pipeline = new VoiceTxOutputPipeline({
+      getSinkState: () => chunkSink,
+      getObserver: () => ({
+        onFrameProcessed: ({ underrunCount }) => {
+          underruns = Math.max(underruns, underrunCount ?? 0);
+        },
+      }),
+      getVolumeGain: () => 1,
+      writeOutputChunk: () => true,
+    });
+    const base = Date.now();
+
+    try {
+      for (let index = 0; index < 6; index += 1) {
+        pipeline.ingest(createInputFrame(), 16000, {
+          ...createMeta(index, base + (index * 20), policy),
+          serverReceivedAtMs: base + (index * 20),
+          frameDurationMs: 20,
+          codec: 'pcm-s16le',
+        });
+      }
+
+      await vi.advanceTimersByTimeAsync(1);
+      const state = pipeline.getOutputBufferState();
+      expect(state.targetMs).toBe(60);
+      expect(state.deviceLeadMs).toBeLessThanOrEqual(61);
+      expect(underruns).toBe(0);
+    } finally {
+      pipeline.clear();
+      vi.useRealTimers();
+    }
+  });
+
   it('drops stale frames instead of letting old speech accumulate', () => {
     const dropped: string[] = [];
     const observer: VoiceTxOutputObserver = {
@@ -124,11 +165,23 @@ describe('VoiceTxOutputPipeline', () => {
       createMeta(1, Date.now(), resolveVoiceTxBufferPolicy({ profile: 'custom', customTargetBufferMs: 120 })),
     );
     const lowTargetState = pipeline.getOutputBufferState();
+    expect(lowTargetState.targetMs).toBe(120);
+    expect(lowTargetState.rebufferEnterWaterMs).toBe(72);
+    expect(lowTargetState.rebufferResumeWaterMs).toBe(108);
+
+    pipeline.clear();
+    pipeline.setOutputEnabled(false);
+    pipeline.ingest(
+      createInputFrame(),
+      16000,
+      createMeta(1, Date.now(), resolveVoiceTxBufferPolicy({ profile: 'custom', customTargetBufferMs: 40 })),
+    );
+    const minimumTargetState = pipeline.getOutputBufferState();
     pipeline.clear();
 
-    expect(lowTargetState.targetMs).toBe(120);
-    expect(lowTargetState.rebufferEnterWaterMs).toBe(80);
-    expect(lowTargetState.rebufferResumeWaterMs).toBe(120);
+    expect(minimumTargetState.targetMs).toBe(40);
+    expect(minimumTargetState.rebufferEnterWaterMs).toBe(24);
+    expect(minimumTargetState.rebufferResumeWaterMs).toBe(36);
   });
 
   it('relaxes stale drops when the TX target is high', () => {
@@ -510,7 +563,13 @@ describe('VoiceTxOutputPipeline', () => {
       const writesBeforeJitter = writes.length;
       pipeline.ingest(createInputFrame(), 16000, {
         ...createMeta(5, base + 100, policy),
-        serverReceivedAtMs: base + 180,
+        serverReceivedAtMs: base + 120,
+        frameDurationMs: 20,
+        codec: 'pcm-s16le',
+      });
+      pipeline.ingest(createInputFrame(), 16000, {
+        ...createMeta(6, base + 120, policy),
+        serverReceivedAtMs: base + 140,
         frameDurationMs: 20,
         codec: 'pcm-s16le',
       });

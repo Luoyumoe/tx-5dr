@@ -102,14 +102,14 @@ describe('VoiceTxBufferPreferenceSchema', () => {
       direction: 'send',
     });
     expect(parsed.voiceTxBufferPreference).toBeUndefined();
-    expect(resolveVoiceTxBufferPolicy(parsed.voiceTxBufferPreference).targetMs).toBe(80);
+    expect(resolveVoiceTxBufferPolicy(parsed.voiceTxBufferPreference).targetMs).toBe(60);
   });
 
   it('resolves automatic and custom TX buffer policies', () => {
     expect(resolveVoiceTxBufferPolicy({ profile: 'auto' })).toMatchObject({
       profile: 'auto',
-      targetMs: 80,
-      minMs: 60,
+      targetMs: 60,
+      minMs: 40,
       maxMs: 400,
     });
     expect(resolveVoiceTxBufferPolicy({

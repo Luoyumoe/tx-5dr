@@ -61,7 +61,7 @@ function createEstimator(policy: ResolvedVoiceTxBufferPolicy, initialTargetMs: n
     softFloorMs: policy.targetMs,
     maxTargetMs: policy.maxMs,
     frameDurationMs: 20,
-    basePreRollMs: Math.max(policy.minMs, policy.targetMs - 10),
+    basePreRollMs: Math.max(0, policy.targetMs - 20),
     schedulingMarginMs: 10,
     decreaseAfterMs: TARGET_DECREASE_AFTER_MS,
     decreaseStepMs: TARGET_DECREASE_MS,

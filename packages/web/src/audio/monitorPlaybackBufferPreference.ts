@@ -12,6 +12,8 @@ export interface ResolvedMonitorPlaybackBufferPolicy {
   minTargetMs: number;
   maxTargetMs: number;
   queueHeadroomMs: number;
+  basePreRollMs: number;
+  schedulingMarginMs: number;
   targetIncreaseMs: number;
   targetDecreaseMs: number;
   underrunRecoveryFrames: number;
@@ -21,7 +23,8 @@ export interface ResolvedMonitorPlaybackBufferPolicy {
 }
 
 export const MONITOR_PLAYBACK_BUFFER_STORAGE_KEY = 'tx5dr.monitor.playbackBufferPreference';
-export const MONITOR_PLAYBACK_JITTER_SEED_STORAGE_KEY = 'tx5dr.monitor.playbackJitterSeed';
+// v2 invalidates pre-low-latency jitter seeds that can otherwise keep the first stream at 80 ms or higher.
+export const MONITOR_PLAYBACK_JITTER_SEED_STORAGE_KEY = 'tx5dr.monitor.playbackJitterSeed.v2';
 export const MONITOR_PLAYBACK_JITTER_SEED_TTL_MS = 30 * 60 * 1000;
 export const MONITOR_PLAYBACK_BUFFER_CUSTOM_MIN_MS = 40;
 export const MONITOR_PLAYBACK_BUFFER_CUSTOM_MAX_MS = 500;
@@ -31,12 +34,14 @@ export const DEFAULT_MONITOR_PLAYBACK_BUFFER_PREFERENCE: MonitorPlaybackBufferPr
 export const DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY: ResolvedMonitorPlaybackBufferPolicy = {
   profile: 'auto',
   adaptive: true,
-  targetBufferMs: 80,
-  initialTargetMs: 80,
-  minTargetMs: 60,
+  targetBufferMs: 40,
+  initialTargetMs: 60,
+  minTargetMs: 40,
   maxTargetMs: 400,
   queueHeadroomMs: 20,
-  targetIncreaseMs: 15,
+  basePreRollMs: 20,
+  schedulingMarginMs: 10,
+  targetIncreaseMs: 20,
   targetDecreaseMs: 5,
   underrunRecoveryFrames: 3,
   adaptIncreaseCooldownMs: 2500,
@@ -207,9 +212,13 @@ export function resolveMonitorPlaybackJitterSeedTargetMs(
   if (!Number.isFinite(p95Ms)) {
     return clampAutoInitialTarget(stats.targetMs);
   }
-  const p95Recommended = Math.ceil((60 + Math.max(0, p95Ms) + 10) / 20) * 20;
+  const p95Recommended = Math.ceil((
+    DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY.basePreRollMs
+    + Math.max(0, p95Ms)
+    + DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY.schedulingMarginMs
+  ) / 20) * 20;
   return Math.min(
     clampAutoInitialTarget(stats.targetMs),
-    clampAutoInitialTarget(Math.max(DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY.initialTargetMs, p95Recommended)),
+    clampAutoInitialTarget(Math.max(DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY.targetBufferMs, p95Recommended)),
   );
 }

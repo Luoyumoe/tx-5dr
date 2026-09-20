@@ -103,13 +103,13 @@ export const DEFAULT_VOICE_TX_BUFFER_PROFILE: VoiceTxBufferProfile = 'auto';
 const VOICE_TX_BUFFER_PRESETS: Record<Exclude<VoiceTxBufferProfile, 'custom'>, ResolvedVoiceTxBufferPolicy> = {
   auto: {
     profile: 'auto',
-    targetMs: 80,
-    minMs: 60,
+    targetMs: 60,
+    minMs: 40,
     maxMs: 400,
-    headroomMs: 40,
-    staleFrameMs: 650,
-    uplinkMaxBufferedAudioMs: 180,
-    uplinkDegradedBufferedAudioMs: 360,
+    headroomMs: 20,
+    staleFrameMs: 400,
+    uplinkMaxBufferedAudioMs: 120,
+    uplinkDegradedBufferedAudioMs: 240,
   },
 };
 

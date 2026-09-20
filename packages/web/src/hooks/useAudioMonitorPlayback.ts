@@ -489,7 +489,7 @@ export function useAudioMonitorPlayback(
     }
 
     const sourceLatencyMs = source?.latencyMs ?? 0;
-    const targetBufferMs = receiver?.targetBufferMs ?? 80;
+    const targetBufferMs = receiver?.targetBufferMs ?? 40;
     const playbackQueueMs = Math.max(0, receiver?.playbackQueueMs ?? receiver?.queueDurationMs ?? receiver?.latencyMs ?? 0);
     const effectiveQueueMs = Math.min(playbackQueueMs, targetBufferMs);
     const stableBufferFillPercent = Math.max(
