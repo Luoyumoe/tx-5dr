@@ -816,7 +816,7 @@ export const RadioDeviceSettings = forwardRef<RadioDeviceSettingsRef, RadioDevic
           <div className="text-xs text-default-400 space-y-1 bg-default-50 p-3 rounded-lg">
             <p className="font-medium">{t('radio.pttMethodNote')}</p>
             <p>• <strong>{t('radio.pttNone')}</strong>：{t('radio.pttNoneDesc')}</p>
-            <p>• <strong>CAT</strong>：{t('radio.pttCatDesc')}</p>
+            {!isNoRadio && <p>• <strong>CAT</strong>：{t('radio.pttCatDesc')}</p>}
             <p>• <strong>VOX</strong>：{t('radio.pttVoxDesc')}</p>
             <p>• <strong>DTR/RTS</strong>：{t('radio.pttDtrRtsDesc')}</p>
           </div>
