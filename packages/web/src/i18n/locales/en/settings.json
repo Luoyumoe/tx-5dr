@@ -273,7 +273,7 @@
     "tipRemoteNetwork": "Remote network: 100-200ms",
     "tipIcomAudio": "Audio is provided directly by ICOM WLAN, no separate audio device needed",
     "noneTitle": "No Radio Control",
-    "noneDesc": "No radio control, FT8 decode only",
+    "noneDesc": "No CAT control; standalone serial PTT or CW DTR/RTS keying remains available.",
     "resetToZero": "Reset to 0",
     "tipNoneMode": "No-radio mode usually needs no compensation",
     "pageTitle": "Radio Device Settings",

@@ -824,7 +824,7 @@ export const RadioDeviceSettings = forwardRef<RadioDeviceSettingsRef, RadioDevic
       );
     };
 
-    // 渲染 CW 键控端口配置区块（仅 serial / network 模式）
+    // 渲染 CW 键控端口配置区块（串口、网络及无电台独立键控模式）
     const renderCWKeyerPortConfig = () => {
       const cwKeyMethod = config.cwKeyMethod || 'dtr';
       const cwKeyActiveLevel: CWKeyActiveLevel = config.cwKeyActiveLevel || 'high';
@@ -1857,6 +1857,9 @@ export const RadioDeviceSettings = forwardRef<RadioDeviceSettingsRef, RadioDevic
 
                 <Divider />
                 {renderPttConfig()}
+
+                <Divider />
+                {renderCWKeyerPortConfig()}
 
                 <Divider />
 

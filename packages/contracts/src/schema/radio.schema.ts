@@ -316,14 +316,14 @@ export const HamlibConfigSchema = z.object({
   fakeFrequency: FakeFrequencyConfigSchema.optional(),
 
   // PTT 方法（默认 'cat'，即 Hamlib RIG 类型）
-  // 仅对 network 和 serial 连接类型有效，icom-wlan 固定使用 CI-V PTT
+  // none/vox 不主动拉 PTT；dtr/rts 可在无 CAT 的 none 类型下使用独立串口。
   pttMethod: PttMethodSchema.optional(),
 
   // PTT 独立串口路径（仅当 pttMethod 为 dtr/rts 时有效）
-  // 留空则复用 CAT 同一串口
+  // none 类型必须配置；有 CAT 串口时留空则复用同一串口。
   pttPort: z.string().optional(),
 
-  // CW 键控串口路径（用于 DTR/RTS 引脚驱动电台 CW KEY 输入）
+  // CW 键控串口路径（DTR/RTS 引脚驱动电台 CW KEY 输入，可独立于 CAT）
   cwKeyPort: z.string().optional(),
 
   // CW 键控引脚类型（dtr 或 rts）
