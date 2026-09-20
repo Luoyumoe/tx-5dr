@@ -15,17 +15,15 @@ const logger = createLogger('VoiceTxOutputPipeline');
 const DEBUG_REALTIME_JITTER = process.env.TX5DR_DEBUG_REALTIME_JITTER === '1';
 const DEBUG_VOICE_TX_OUTPUT = process.env.TX5DR_DEBUG_VOICE_TX === '1' || DEBUG_REALTIME_JITTER;
 const MAX_PLC_CHUNKS = 1;
-const RTAUDIO_DEVICE_LEAD_MIN_MS = 100;
-const RTAUDIO_DEVICE_LEAD_MAX_MS = 160;
+const RTAUDIO_DEVICE_LEAD_MIN_MS = 40;
+const RTAUDIO_DEVICE_LEAD_MAX_MS = 120;
 const OUTPUT_CATCHUP_MAX_WRITES_PER_TICK = 10;
 const OUTPUT_IDLE_POLL_MS = 5;
 const TX_OUTPUT_DIAGNOSTIC_INTERVAL_MS = 1000;
 const REBUFFER_RESUME_MARGIN_MS = 5;
 const REBUFFER_ENTER_RATIO = 0.6;
-const REBUFFER_ENTER_MIN_MS = 80;
-const REBUFFER_ENTER_TARGET_GAP_MS = 80;
-const REBUFFER_RESUME_TARGET_GAP_MS = 40;
-const REBUFFER_RESUME_MIN_GAP_MS = 60;
+const REBUFFER_RESUME_RATIO = 0.9;
+const REBUFFER_TARGET_MARGIN_MS = 10;
 const STALE_TARGET_MARGIN_MS = 200;
 
 export type { VoiceTxOutputSinkState } from './VoiceTxOutputTypes.js';
@@ -259,7 +257,11 @@ export class VoiceTxOutputPipeline {
       const totalBufferedMs = queueMs + deviceLeadMs;
       const desiredDeviceLeadMs = this.getDesiredOutputDeviceLeadMs(sink, chunkMs);
       this.recordBufferDiagnostics(sink);
-      if (!this.playoutStarted && totalBufferedMs < this.jitter.targetMs && this.outputQueue.length > 0) {
+      if (
+        !this.playoutStarted
+        && totalBufferedMs < Math.max(this.jitter.targetMs, desiredDeviceLeadMs)
+        && this.outputQueue.length > 0
+      ) {
         this.maybeLogDiagnostics('pre-roll');
         this.scheduleNextTick(OUTPUT_IDLE_POLL_MS);
         return;
@@ -292,7 +294,7 @@ export class VoiceTxOutputPipeline {
         && generation === this.generation
         && this.outputEnabled
         && (
-          this.getEstimatedOutputDeviceLeadMs(sink.outputSampleRate) < desiredDeviceLeadMs
+          (this.outputQueue.length > 0 && this.getEstimatedOutputDeviceLeadMs(sink.outputSampleRate) < desiredDeviceLeadMs)
           || (this.outputQueue.length === 0 && this.getEstimatedOutputDeviceLeadMs(sink.outputSampleRate) <= chunkMs * 0.5)
         )
       ) {
@@ -426,9 +428,13 @@ export class VoiceTxOutputPipeline {
     if (sink.kind !== 'rtaudio') {
       return chunkMs;
     }
+    // Each write adds one full device chunk. Center the trigger below the
+    // jitter target so the resulting lead oscillates around that target
+    // instead of overshooting by a whole chunk.
+    const centeredLeadMs = this.jitter.targetMs - (chunkMs / 2);
     return Math.min(
       RTAUDIO_DEVICE_LEAD_MAX_MS,
-      Math.max(chunkMs * 3, RTAUDIO_DEVICE_LEAD_MIN_MS, this.jitter.targetMs * 0.55),
+      Math.max(chunkMs * 2, RTAUDIO_DEVICE_LEAD_MIN_MS, centeredLeadMs),
     );
   }
 
@@ -493,11 +499,8 @@ export class VoiceTxOutputPipeline {
 
   private getRebufferEnterWaterMs(): number {
     const targetMs = this.jitter.targetMs;
-    const upperBoundMs = Math.max(REBUFFER_ENTER_MIN_MS, targetMs - REBUFFER_ENTER_TARGET_GAP_MS);
-    return Math.max(
-      REBUFFER_ENTER_MIN_MS,
-      Math.min(upperBoundMs, Math.round(targetMs * REBUFFER_ENTER_RATIO)),
-    );
+    const enterCeilingMs = Math.max(1, targetMs - REBUFFER_TARGET_MARGIN_MS);
+    return Math.max(1, Math.min(enterCeilingMs, Math.round(targetMs * REBUFFER_ENTER_RATIO)));
   }
 
   private getRebufferResumeWaterMs(): number {
@@ -505,7 +508,10 @@ export class VoiceTxOutputPipeline {
     const enterWaterMs = this.getRebufferEnterWaterMs();
     return Math.min(
       targetMs,
-      Math.max(enterWaterMs + REBUFFER_RESUME_MIN_GAP_MS, targetMs - REBUFFER_RESUME_TARGET_GAP_MS),
+      Math.max(
+        enterWaterMs + REBUFFER_TARGET_MARGIN_MS,
+        Math.round(targetMs * REBUFFER_RESUME_RATIO),
+      ),
     );
   }
 

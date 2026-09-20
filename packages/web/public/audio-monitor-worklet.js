@@ -78,12 +78,14 @@ class AudioMonitorProcessor extends AudioWorkletProcessor {
   createDefaultBufferPolicy() {
     return {
       adaptive: true,
-      targetBufferMs: 80,
-      initialTargetMs: 80,
-      minTargetMs: 60,
+      targetBufferMs: 40,
+      initialTargetMs: 60,
+      minTargetMs: 40,
       maxTargetMs: 400,
       queueHeadroomMs: 20,
-      targetIncreaseMs: 15,
+      basePreRollMs: 20,
+      schedulingMarginMs: 10,
+      targetIncreaseMs: 20,
       targetDecreaseMs: 5,
       underrunRecoveryFrames: 3,
       adaptIncreaseCooldownMs: 2500,
@@ -107,6 +109,8 @@ class AudioMonitorProcessor extends AudioWorkletProcessor {
       minTargetMs: Math.max(1, numberOrDefault(next.minTargetMs, defaults.minTargetMs)),
       maxTargetMs: Math.max(1, numberOrDefault(next.maxTargetMs, defaults.maxTargetMs)),
       queueHeadroomMs: Math.max(0, numberOrDefault(next.queueHeadroomMs, defaults.queueHeadroomMs)),
+      basePreRollMs: Math.max(0, numberOrDefault(next.basePreRollMs, defaults.basePreRollMs)),
+      schedulingMarginMs: Math.max(0, numberOrDefault(next.schedulingMarginMs, defaults.schedulingMarginMs)),
       targetIncreaseMs: Math.max(0, numberOrDefault(next.targetIncreaseMs, defaults.targetIncreaseMs)),
       targetDecreaseMs: Math.max(0, numberOrDefault(next.targetDecreaseMs, defaults.targetDecreaseMs)),
       underrunRecoveryFrames: Math.max(1, Math.round(numberOrDefault(next.underrunRecoveryFrames, defaults.underrunRecoveryFrames))),
@@ -482,7 +486,13 @@ class AudioMonitorProcessor extends AudioWorkletProcessor {
     const p95 = p95Index >= 0 ? delays[p95Index] : 0;
     const recommended = Math.max(
       this.bufferPolicy.targetBufferMs,
-      Math.min(this.bufferPolicy.maxTargetMs, Math.max(this.bufferPolicy.minTargetMs, Math.ceil((60 + p95 + 10) / 20) * 20))
+      Math.min(
+        this.bufferPolicy.maxTargetMs,
+        Math.max(
+          this.bufferPolicy.minTargetMs,
+          Math.ceil((this.bufferPolicy.basePreRollMs + p95 + this.bufferPolicy.schedulingMarginMs) / 20) * 20
+        )
+      )
     );
     return {
       activeTargetMs: this.adaptiveTargetMs,
