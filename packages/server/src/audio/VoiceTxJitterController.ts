@@ -346,7 +346,7 @@ export class VoiceTxJitterController {
     if (!Number.isFinite(p95Ms)) {
       return boundedTarget;
     }
-    const basePreRollMs = Math.max(policy.minMs, policy.targetMs - 10);
+    const basePreRollMs = Math.max(policy.minMs, policy.targetMs - 20);
     const recommended = roundUpToFrameMs(basePreRollMs + Math.max(0, p95Ms) + 10);
     return Math.min(
       boundedTarget,
