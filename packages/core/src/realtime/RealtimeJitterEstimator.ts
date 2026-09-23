@@ -159,7 +159,7 @@ export class RealtimeJitterEstimator {
       this.minTargetMs,
       this.maxTargetMs,
     );
-    this.basePreRollMs = clampPositive(options.basePreRollMs, 60);
+    this.basePreRollMs = clampNonnegative(options.basePreRollMs, 60);
     this.schedulingMarginMs = Math.max(0, Math.round(options.schedulingMarginMs ?? 10));
     this.decreaseAfterMs = Math.max(0, Math.round(options.decreaseAfterMs ?? 10_000));
     this.decreaseStepMs = Math.max(1, Math.round(options.decreaseStepMs ?? this.frameDurationMs));
@@ -374,6 +374,11 @@ export class RealtimeJitterEstimator {
 function clampPositive(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
+}
+
+function clampNonnegative(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : fallback;
 }
 
 function clamp(value: number, min: number, max: number): number {

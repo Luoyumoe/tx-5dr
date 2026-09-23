@@ -32,6 +32,31 @@ test('raises target from early packet jitter before underruns happen', () => {
   assert.equal(snapshot.relativeDelayP95Ms, 50);
 });
 
+test('adds jitter and scheduling margin without a fixed pre-roll allowance', () => {
+  const estimator = new RealtimeJitterEstimator({
+    minTargetMs: 40,
+    initialTargetMs: 40,
+    softFloorMs: 40,
+    maxTargetMs: 400,
+    frameDurationMs: 20,
+    basePreRollMs: 0,
+    schedulingMarginMs: 10,
+    nowMs: 0,
+  });
+
+  estimator.recordPacket({ sequence: 0, arrivalTimeMs: 0, frameDurationMs: 20 });
+  estimator.recordPacket({ sequence: 1, arrivalTimeMs: 48, frameDurationMs: 20 });
+  const withinFloor = estimator.recordPacket({ sequence: 2, arrivalTimeMs: 68, frameDurationMs: 20 });
+  assert.equal(withinFloor.relativeDelayP95Ms, 28);
+  assert.equal(withinFloor.recommendedTargetMs, 40);
+  assert.equal(withinFloor.activeTargetMs, 40);
+
+  const aboveFloor = estimator.recordPacket({ sequence: 3, arrivalTimeMs: 105, frameDurationMs: 20 });
+  assert.equal(aboveFloor.relativeDelayP95Ms, 45);
+  assert.equal(aboveFloor.recommendedTargetMs, 60);
+  assert.equal(aboveFloor.activeTargetMs, 60);
+});
+
 test('uses probes as startup jitter samples', () => {
   const estimator = createEstimator(0);
   estimator.recordProbe({ sequence: 1, sentAtMs: 1000, arrivalTimeMs: 5000, intervalMs: 200 });

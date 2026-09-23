@@ -79,11 +79,11 @@ class AudioMonitorProcessor extends AudioWorkletProcessor {
     return {
       adaptive: true,
       targetBufferMs: 40,
-      initialTargetMs: 60,
+      initialTargetMs: 40,
       minTargetMs: 40,
       maxTargetMs: 400,
       queueHeadroomMs: 20,
-      basePreRollMs: 20,
+      basePreRollMs: 0,
       schedulingMarginMs: 10,
       targetIncreaseMs: 20,
       targetDecreaseMs: 5,

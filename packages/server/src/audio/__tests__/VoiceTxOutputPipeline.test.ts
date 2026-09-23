@@ -109,7 +109,7 @@ describe('VoiceTxOutputPipeline', () => {
 
       await vi.advanceTimersByTimeAsync(1);
       const state = pipeline.getOutputBufferState();
-      expect(state.targetMs).toBe(60);
+      expect(state.targetMs).toBe(40);
       expect(state.deviceLeadMs).toBeLessThanOrEqual(61);
       expect(underruns).toBe(0);
     } finally {
@@ -560,16 +560,15 @@ describe('VoiceTxOutputPipeline', () => {
       await vi.advanceTimersByTimeAsync(2);
       expect(writes.length).toBeGreaterThan(0);
 
-      const writesBeforeJitter = writes.length;
       pipeline.ingest(createInputFrame(), 16000, {
         ...createMeta(5, base + 100, policy),
-        serverReceivedAtMs: base + 120,
+        serverReceivedAtMs: base + 145,
         frameDurationMs: 20,
         codec: 'pcm-s16le',
       });
       pipeline.ingest(createInputFrame(), 16000, {
         ...createMeta(6, base + 120, policy),
-        serverReceivedAtMs: base + 140,
+        serverReceivedAtMs: base + 165,
         frameDurationMs: 20,
         codec: 'pcm-s16le',
       });
@@ -580,7 +579,10 @@ describe('VoiceTxOutputPipeline', () => {
       expect(stateAfterJitter.rebuffering).toBe(false);
 
       await vi.advanceTimersByTimeAsync(80);
-      expect(writes.length).toBeGreaterThan(writesBeforeJitter);
+      const settledState = pipeline.getOutputBufferState();
+      expect(settledState.playoutStarted).toBe(true);
+      expect(settledState.rebuffering).toBe(false);
+      expect(settledState.totalBufferedMs).toBeGreaterThanOrEqual(settledState.rebufferEnterWaterMs);
       expect(writes.every((samples) => samples.length === chunkSink.outputBufferSize)).toBe(true);
     } finally {
       pipeline.clear();

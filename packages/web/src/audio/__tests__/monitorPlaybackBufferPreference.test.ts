@@ -62,9 +62,9 @@ describe('monitor playback buffer preference', () => {
   it('resolves auto to the existing adaptive defaults', () => {
     expect(DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY).toMatchObject({
       targetBufferMs: 40,
-      initialTargetMs: 60,
+      initialTargetMs: 40,
       minTargetMs: 40,
-      basePreRollMs: 20,
+      basePreRollMs: 0,
       schedulingMarginMs: 10,
     });
     expect(resolveMonitorPlaybackBufferPolicy({ profile: 'auto' })).toEqual(DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY);
@@ -112,17 +112,18 @@ describe('monitor playback buffer preference', () => {
       updatedAtMs: Date.now(),
     });
     expect(JSON.parse(window.localStorage.getItem(MONITOR_PLAYBACK_JITTER_SEED_STORAGE_KEY) ?? '{}')).toMatchObject({
-      targetMs: 80,
+      targetMs: 60,
       p95Ms: 44,
       transport: 'rtc-data-audio',
       codec: 'opus',
     });
-    expect(loadMonitorPlaybackJitterSeed()).toMatchObject({ targetMs: 80 });
+    expect(loadMonitorPlaybackJitterSeed()).toMatchObject({ targetMs: 60 });
   });
 
   it('saves auto jitter seed from p95 recommendation instead of a stale max target', () => {
     expect(resolveMonitorPlaybackJitterSeedTargetMs({ targetMs: 220, p95Ms: 0 })).toBe(40);
-    expect(resolveMonitorPlaybackJitterSeedTargetMs({ targetMs: 220, p95Ms: 28 })).toBe(60);
+    expect(resolveMonitorPlaybackJitterSeedTargetMs({ targetMs: 220, p95Ms: 28 })).toBe(40);
+    expect(resolveMonitorPlaybackJitterSeedTargetMs({ targetMs: 220, p95Ms: 35 })).toBe(60);
     expect(resolveMonitorPlaybackJitterSeedTargetMs({ targetMs: 140, p95Ms: null })).toBe(140);
   });
 });
