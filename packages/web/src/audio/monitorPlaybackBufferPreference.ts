@@ -23,8 +23,8 @@ export interface ResolvedMonitorPlaybackBufferPolicy {
 }
 
 export const MONITOR_PLAYBACK_BUFFER_STORAGE_KEY = 'tx5dr.monitor.playbackBufferPreference';
-// v2 invalidates pre-low-latency jitter seeds that can otherwise keep the first stream at 80 ms or higher.
-export const MONITOR_PLAYBACK_JITTER_SEED_STORAGE_KEY = 'tx5dr.monitor.playbackJitterSeed.v2';
+// v3 invalidates seeds saved before the zero-pre-roll target calculation.
+export const MONITOR_PLAYBACK_JITTER_SEED_STORAGE_KEY = 'tx5dr.monitor.playbackJitterSeed.v3';
 export const MONITOR_PLAYBACK_JITTER_SEED_TTL_MS = 30 * 60 * 1000;
 export const MONITOR_PLAYBACK_BUFFER_CUSTOM_MIN_MS = 40;
 export const MONITOR_PLAYBACK_BUFFER_CUSTOM_MAX_MS = 500;
@@ -35,11 +35,11 @@ export const DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY: ResolvedMonitorPlaybackBuff
   profile: 'auto',
   adaptive: true,
   targetBufferMs: 40,
-  initialTargetMs: 60,
+  initialTargetMs: 40,
   minTargetMs: 40,
   maxTargetMs: 400,
   queueHeadroomMs: 20,
-  basePreRollMs: 20,
+  basePreRollMs: 0,
   schedulingMarginMs: 10,
   targetIncreaseMs: 20,
   targetDecreaseMs: 5,
@@ -213,8 +213,7 @@ export function resolveMonitorPlaybackJitterSeedTargetMs(
     return clampAutoInitialTarget(stats.targetMs);
   }
   const p95Recommended = Math.ceil((
-    DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY.basePreRollMs
-    + Math.max(0, p95Ms)
+    Math.max(0, p95Ms)
     + DEFAULT_MONITOR_PLAYBACK_BUFFER_POLICY.schedulingMarginMs
   ) / 20) * 20;
   return Math.min(

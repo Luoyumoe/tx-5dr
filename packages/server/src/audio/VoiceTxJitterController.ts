@@ -6,7 +6,7 @@ import type { Logger } from '../utils/logger.js';
 const TARGET_INCREASE_MS = 20;
 const TARGET_DECREASE_MS = 20;
 const TARGET_INCREASE_COOLDOWN_MS = 0;
-const TARGET_DECREASE_AFTER_MS = 30_000;
+const TARGET_DECREASE_AFTER_MS = 10_000;
 const TX_JITTER_SEED_TTL_MS = 30 * 60 * 1000;
 const TX_JITTER_MAX_LOG_INTERVAL_MS = 2000;
 const DEFAULT_VOICE_TX_BUFFER_POLICY = resolveVoiceTxBufferPolicy();
@@ -61,7 +61,7 @@ function createEstimator(policy: ResolvedVoiceTxBufferPolicy, initialTargetMs: n
     softFloorMs: policy.targetMs,
     maxTargetMs: policy.maxMs,
     frameDurationMs: 20,
-    basePreRollMs: Math.max(0, policy.targetMs - 20),
+    basePreRollMs: 0,
     schedulingMarginMs: 10,
     decreaseAfterMs: TARGET_DECREASE_AFTER_MS,
     decreaseStepMs: TARGET_DECREASE_MS,
@@ -346,8 +346,7 @@ export class VoiceTxJitterController {
     if (!Number.isFinite(p95Ms)) {
       return boundedTarget;
     }
-    const basePreRollMs = Math.max(policy.minMs, policy.targetMs - 20);
-    const recommended = roundUpToFrameMs(basePreRollMs + Math.max(0, p95Ms) + 10);
+    const recommended = roundUpToFrameMs(Math.max(0, p95Ms) + 10);
     return Math.min(
       boundedTarget,
       Math.max(policy.targetMs, Math.min(policy.maxMs, recommended)),

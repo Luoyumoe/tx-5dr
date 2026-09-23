@@ -245,10 +245,10 @@ Realtime voice audio is a state stream, not a file stream.
 
 - Prefer dropping late frames over playing stale audio.
 - Keep publisher queues bounded in milliseconds.
-- Auto monitor playback starts with a 60 ms safety lead and may settle at a
-  40 ms floor after sustained low jitter. Voice TX jitter buffering starts at
-  60 ms and rises on packet jitter or underruns; RtAudio TX device lead is kept
-  between 40 ms and 120 ms.
+- Auto monitor and voice TX buffering start at a 40 ms floor. Timing probes or
+  packet relative-delay P95 raise the target in 20 ms steps, using a 10 ms
+  scheduling margin without adding a second fixed pre-roll allowance. RtAudio
+  TX device lead is kept between 40 ms and 120 ms.
 - Use frame timestamps and sequence numbers for recovery and diagnostics.
 - Do not re-enter large playback prefill after underrun; use at most one short PLC tail, then silence briefly and resume with fresh frames.
 - Keep sample-rate conversion only at true transport/device edges.
