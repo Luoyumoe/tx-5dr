@@ -37,6 +37,7 @@
   "rightLayout": {
     "resetSplitToAuto": "双击恢复自适应布局"
   },
+  "recording": { "start": "开始录音", "stop": "停止录音", "error": "录音错误", "requestFailed": "录音请求失败" },
   "status": {
     "loading": "加载中...",
     "connected": "已连接",

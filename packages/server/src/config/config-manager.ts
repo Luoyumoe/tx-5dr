@@ -15,6 +15,8 @@ import {
   type CWDecoderConfig,
   type SpectrumPreset,
   type SpectrumCustomSettings,
+  type AudioRecordingSettings,
+  AudioRecordingSettingsSchema,
   SpectrumCustomSettingsSchema,
   TciIqSampleRateSchema,
   TciSpectrumSettingsSchema,
@@ -182,6 +184,7 @@ export interface AppConfig {
     enabled: boolean;
     noticeVersion: number;
   };
+  recording: AudioRecordingSettings;
 }
 
 // 音频处理配置接口
@@ -255,6 +258,12 @@ const DEFAULT_CONFIG: AppConfig = {
   observability: {
     enabled: true,
     noticeVersion: 0,
+  },
+  recording: {
+    format: 'wav',
+    quality: 'medium',
+    source: 'rx',
+    directory: '/tmp/tx5dr-recordings',
   },
 };
 
@@ -1165,6 +1174,17 @@ export class ConfigManager {
    */
   getConfig(): AppConfig {
     return { ...this.config };
+  }
+
+  getRecordingSettings(): AudioRecordingSettings {
+    return AudioRecordingSettingsSchema.parse(this.config.recording);
+  }
+
+  async updateRecordingSettings(settings: Partial<AudioRecordingSettings>): Promise<AudioRecordingSettings> {
+    const next = AudioRecordingSettingsSchema.parse({ ...this.getRecordingSettings(), ...settings });
+    this.config.recording = next;
+    await this.saveConfig();
+    return next;
   }
 
   async updateLogLevel(level: NonNullable<AppConfig['logLevel']>): Promise<void> {

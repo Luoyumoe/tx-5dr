@@ -38,7 +38,8 @@ export type CapabilitySubject =
   | 'CWDecoderConfig'
   | 'SettingsDecodeWindows'
   | 'SettingsFrequencyPresets'
-  | 'StationInfo';
+  | 'StationInfo'
+  | 'AudioRecording';
 
 export type AppSubject = DomainSubject | CapabilitySubject | 'all';
 
@@ -66,6 +67,7 @@ export enum Permission {
   SETTINGS_DECODE_WINDOWS = 'settings:decode_windows',
   SETTINGS_FREQUENCY_PRESETS = 'settings:frequency_presets',
   STATION_UPDATE = 'station:update',
+  AUDIO_RECORDING = 'audio:recording',
 }
 
 export const PermissionSchema = z.nativeEnum(Permission);
@@ -88,6 +90,7 @@ export const PERMISSION_RULE_MAP: Record<Permission, { action: AppAction; subjec
   [Permission.SETTINGS_DECODE_WINDOWS]: { action: 'update', subject: 'SettingsDecodeWindows' },
   [Permission.SETTINGS_FREQUENCY_PRESETS]: { action: 'update', subject: 'SettingsFrequencyPresets' },
   [Permission.STATION_UPDATE]: { action: 'update', subject: 'StationInfo' },
+  [Permission.AUDIO_RECORDING]: { action: 'execute', subject: 'AudioRecording' },
 };
 
 // ===== PermissionGrant (stored on token) =====

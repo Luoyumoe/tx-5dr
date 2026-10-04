@@ -425,6 +425,7 @@
     "tabOperator": "オペレーター",
     "tabDisplay": "通知を表示する",
     "tabRadioProfile": "無線機設定",
+    "tabRecording": "録音",
     "tabSystem": "システム設定",
     "tabHelpImprove": "改善に協力",
     "tabRigctld": "Rigctld ブリッジ",
@@ -436,6 +437,22 @@
     "goToRadioProfile": "無線設定に移動します",
     "saveSettings": "設定を保存する",
     "tabAbout": "について"
+  },
+  "recording": {
+    "title": "ステーション録音",
+    "description": "サーバー側の音声録音を設定します。",
+    "format": "形式",
+    "quality": "品質",
+    "qualityLow": "低（12 kHz）",
+    "qualityMedium": "中（24 kHz）",
+    "qualityHigh": "高（48 kHz）",
+    "source": "音源",
+    "sourceRx": "受信",
+    "sourceTx": "送信",
+    "sourceBoth": "受信と送信",
+    "directory": "サーバーディレクトリ",
+    "directoryHelp": "サーバー上の絶対パス。",
+    "saveFailed": "録音設定の保存に失敗しました"
   },
   "helpImprove": {
     "title": "TX-5DR の改善に協力",

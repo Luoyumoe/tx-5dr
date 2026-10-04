@@ -18,6 +18,7 @@ import { DeviceServiceAuthManager } from './auth/DeviceServiceAuthManager.js';
 import { authPlugin, requireRole } from './auth/authPlugin.js';
 import { authRoutes } from './routes/auth.js';
 import { audioRoutes } from './routes/audio.js';
+import { recordingRoutes, recordingSettingsRoutes } from './routes/recording.js';
 import { slotpackRoutes } from './routes/slotpack.js';
 import { modeRoutes } from './routes/mode.js';
 import { operatorRoutes } from './routes/operators.js';
@@ -685,6 +686,7 @@ export async function createServer() {
     const { spectrumSettingsWriteRoutes } = await import('./routes/spectrum-settings.js');
     await scope.register(spectrumSettingsWriteRoutes, { prefix: '/api/audio/spectrum-settings' });
     await scope.register(settingsRoutes, { prefix: '/api/settings' });
+    await scope.register(recordingSettingsRoutes, { prefix: '/api/settings' });
     await scope.register(diagnosticRoutes, { prefix: '/api/diagnostics' });
     const { storageRoutes } = await import('./routes/storage.js');
     await scope.register(storageRoutes, { prefix: '/api/storage' });
@@ -697,6 +699,7 @@ export async function createServer() {
 
   // Viewer+ 路由：操作员（内部根据角色过滤）、电台状态、模式、时隙包、语音
   await registerRoleScope(fastify, UserRole.VIEWER, async (scope) => {
+    await scope.register(recordingRoutes, { prefix: '/api/recording' });
     const { spectrumSettingsReadRoutes } = await import('./routes/spectrum-settings.js');
     const { tciSpectrumSettingsReadRoutes, tciSpectrumSettingsWriteRoutes } = await import('./routes/tci-spectrum-settings.js');
     await scope.register(spectrumSettingsReadRoutes, { prefix: '/api/audio/spectrum-settings' });

@@ -25,6 +25,7 @@ import { TokenManagement } from '../auth/TokenManagement';
 import { StationInfoSettings, type StationInfoSettingsRef } from './StationInfoSettings';
 import { OpenWebRXSettings } from './OpenWebRXSettings';
 import { ShortcutSettings, type ShortcutSettingsRef } from './ShortcutSettings';
+import { RecordingSettings, type RecordingSettingsRef } from './RecordingSettings';
 import { AboutPage } from '../../pages/AboutPage';
 import { useHasMinRole, useCan } from '../../store/authStore';
 import { UserRole, type RemoteAccessPreset } from '@tx5dr/contracts';
@@ -43,11 +44,12 @@ interface SettingsModalProps {
 }
 
 // 设置标签页类型（radio 和 audio 已迁移到 ProfileModal，logbook_sync 已迁移到 SyncConfigModal）
-export type SettingsTab = 'radio' | 'audio' | 'operator' | 'display' | 'radio_profile' | 'system' | 'help_improve' | 'rigctld' | 'frequency_presets' | 'tokens' | 'station_info' | 'openwebrx' | 'plugins' | 'shortcuts' | 'about';
+export type SettingsTab = 'radio' | 'audio' | 'operator' | 'display' | 'radio_profile' | 'recording' | 'system' | 'help_improve' | 'rigctld' | 'frequency_presets' | 'tokens' | 'station_info' | 'openwebrx' | 'plugins' | 'shortcuts' | 'about';
 
 const DEFAULT_USES_MODAL_FOOTER_SAVE: Record<SettingsTab, boolean> = {
   radio: false,
   audio: false,
+  recording: true,
   operator: true,
   display: true,
   radio_profile: false,
@@ -97,6 +99,7 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialFrequencyPre
   const stationInfoSettingsRef = useRef<StationInfoSettingsRef | null>(null);
   const pluginSettingsRef = useRef<PluginSettingsTabRef | null>(null);
   const shortcutSettingsRef = useRef<ShortcutSettingsRef | null>(null);
+  const recordingSettingsRef = useRef<RecordingSettingsRef | null>(null);
 
   // 当弹窗打开时，重置到初始标签页
   useEffect(() => {
@@ -164,6 +167,8 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialFrequencyPre
         return pluginSettingsRef.current?.hasUnsavedChanges() || false;
       case 'shortcuts':
         return shortcutSettingsRef.current?.hasUnsavedChanges() || false;
+      case 'recording':
+        return recordingSettingsRef.current?.hasUnsavedChanges() || false;
       default:
         return false;
     }
@@ -244,6 +249,9 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialFrequencyPre
           if (shortcutSettingsRef.current) {
             await shortcutSettingsRef.current.save();
           }
+          break;
+        case 'recording':
+          if (recordingSettingsRef.current) await recordingSettingsRef.current.save();
           break;
         default:
           break;
@@ -347,6 +355,8 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialFrequencyPre
         return `👤 ${t('modal.tabOperator')}`;
       case 'display':
         return `🎨 ${t('modal.tabDisplay')}`;
+      case 'recording':
+        return `⏺ ${t('modal.tabRecording')}`;
       case 'radio_profile':
         return `📻 ${t('modal.tabRadioProfile')}`;
       case 'system':
@@ -384,6 +394,8 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialFrequencyPre
             onUnsavedChanges={setHasUnsavedChanges}
           />
         );
+      case 'recording':
+        return <RecordingSettings ref={recordingSettingsRef} onUnsavedChanges={setHasUnsavedChanges} />;
       case 'display':
         return (
           <DisplayNotificationSettings
@@ -550,6 +562,9 @@ export function SettingsModal({ isOpen, onClose, initialTab, initialFrequencyPre
                       key="radio_profile"
                       title={getTabTitle('radio_profile', isMobile)}
                     />
+                  )}
+                  {isAdmin && (
+                    <Tab key="recording" title={getTabTitle('recording', isMobile)} />
                   )}
                   {isAdmin && (
                     <Tab

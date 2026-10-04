@@ -43,6 +43,7 @@ import {
   type PlayAudioOptions,
   type StopPlaybackOptions,
 } from './audio/AudioStreamManager.js';
+import { RecordingService } from './audio/RecordingService.js';
 import { WSJTXDecodeWorkQueue } from './decode/WSJTXDecodeWorkQueue.js';
 import type { DecodeWorkerPoolHealthSnapshot } from './decode/WSJTXDecodeProcessPool.js';
 import { WSJTXEncodeWorkQueue } from './decode/WSJTXEncodeWorkQueue.js';
@@ -249,6 +250,7 @@ export class DigitalRadioEngine extends EventEmitter<DigitalRadioEngineEvents> {
   private clockSource: ClockSourceSystem;
   private currentMode: ModeDescriptor = MODES.FT8;
   private audioStreamManager: AudioStreamManager;
+  private recordingService: RecordingService;
   private physicalTxAudioBackend: PhysicalTxAudioBackend;
   private realDecodeQueue: WSJTXDecodeWorkQueue;
   private realEncodeQueue: WSJTXEncodeWorkQueue;
@@ -332,6 +334,7 @@ export class DigitalRadioEngine extends EventEmitter<DigitalRadioEngineEvents> {
       },
     );
     this.audioStreamManager = new AudioStreamManager({ now: () => this.clockSource.now() });
+    this.recordingService = new RecordingService(this.audioStreamManager);
     this.physicalTxAudioBackend = this.audioStreamManager;
     this.realDecodeQueue = new WSJTXDecodeWorkQueue();
     const decodeWorkerEvents = this as unknown as DecodeWorkerEngineEmitter;
@@ -858,6 +861,10 @@ export class DigitalRadioEngine extends EventEmitter<DigitalRadioEngineEvents> {
 
   public getAudioStreamManager(): AudioStreamManager {
     return this.audioStreamManager;
+  }
+
+  public getRecordingService(): RecordingService {
+    return this.recordingService;
   }
 
   public getCurrentMode(): ModeDescriptor {
@@ -1642,6 +1649,7 @@ export class DigitalRadioEngine extends EventEmitter<DigitalRadioEngineEvents> {
       logger.warn('audio sidecar stop during destroy failed', err);
     }
     await this.stop();
+    await this.recordingService.destroy();
     await this.operatorManager.qsoCompletions.drain();
     this.squelchStatusMonitor.stop();
     this.releaseCwPttPolling?.();

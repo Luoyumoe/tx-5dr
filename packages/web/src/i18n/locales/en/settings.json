@@ -427,6 +427,7 @@
     "tabOperator": "Operator",
     "tabDisplay": "Display",
     "tabRadioProfile": "Radio Config",
+    "tabRecording": "Recording",
     "tabSystem": "System",
     "tabHelpImprove": "Help Improve",
     "tabRigctld": "Rigctld Bridge",
@@ -438,6 +439,22 @@
     "goToRadioProfile": "Go to Radio Config",
     "saveSettings": "Save Settings",
     "tabAbout": "About"
+  },
+  "recording": {
+    "title": "Station recording",
+    "description": "Configure server-side audio recording.",
+    "format": "Format",
+    "quality": "Quality",
+    "qualityLow": "Low (12 kHz)",
+    "qualityMedium": "Medium (24 kHz)",
+    "qualityHigh": "High (48 kHz)",
+    "source": "Source",
+    "sourceRx": "Receive",
+    "sourceTx": "Transmit",
+    "sourceBoth": "Receive and transmit",
+    "directory": "Server directory",
+    "directoryHelp": "Absolute path on the server.",
+    "saveFailed": "Failed to save recording settings"
   },
   "helpImprove": {
     "title": "Help improve TX-5DR",

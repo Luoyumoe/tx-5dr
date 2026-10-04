@@ -427,6 +427,7 @@
     "tabOperator": "操作员",
     "tabDisplay": "显示通知",
     "tabRadioProfile": "电台配置",
+    "tabRecording": "录音",
     "tabSystem": "系统设置",
     "tabHelpImprove": "帮助改进",
     "tabRigctld": "Rigctld 桥接",
@@ -438,6 +439,22 @@
     "goToRadioProfile": "前往电台配置",
     "saveSettings": "保存设置",
     "tabAbout": "关于"
+  },
+  "recording": {
+    "title": "站台录音",
+    "description": "配置服务端录音。",
+    "format": "格式",
+    "quality": "质量",
+    "qualityLow": "低（12 kHz）",
+    "qualityMedium": "中（24 kHz）",
+    "qualityHigh": "高（48 kHz）",
+    "source": "音源",
+    "sourceRx": "接收",
+    "sourceTx": "发射",
+    "sourceBoth": "接收和发射",
+    "directory": "服务器目录",
+    "directoryHelp": "服务器上的绝对路径。",
+    "saveFailed": "录音设置保存失败"
   },
   "helpImprove": {
     "title": "帮助改进 TX-5DR",

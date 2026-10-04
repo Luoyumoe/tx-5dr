@@ -12,6 +12,7 @@ import { RadioControl } from '../components/radio/control/RadioControl';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { SettingsButton } from '../components/common/SettingsButton';
 import { ServerHealthButton } from '../components/system/ServerHealthButton';
+import { RecordingToolbarControl } from '../components/common/RecordingToolbarControl';
 import { useConnection, useRadioModeState } from '../store/radioStore';
 import { useVoiceCaptureController } from '../hooks/useVoiceCaptureController';
 import { useTranslation } from 'react-i18next';
@@ -70,7 +71,7 @@ export function ImageRightLayout() {
           className="flex items-center"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
         >
-          <ServerHealthButton /><ThemeToggle variant="dropdown" size="sm" /><SettingsButton />
+          <ServerHealthButton /><RecordingToolbarControl /><ThemeToggle variant="dropdown" size="sm" /><SettingsButton />
         </div>
       </div>
       <div className="min-h-0 flex-1 px-2 md:px-5">

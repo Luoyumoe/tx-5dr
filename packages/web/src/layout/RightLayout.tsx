@@ -19,6 +19,7 @@ import { faChevronDown, faKey, faLock, faRightFromBracket, faUser } from '@forta
 import { AutomationSettingsPanel } from '../components/radio/automation/AutomationSettingsPanel';
 import { ServerHealthButton } from '../components/system/ServerHealthButton';
 import { SettingsButton } from '../components/common/SettingsButton';
+import { RecordingToolbarControl } from '../components/common/RecordingToolbarControl';
 import { useTranslation } from 'react-i18next';
 import { OPEN_ACCOUNT_SECURITY_MODAL_EVENT } from '../components/app/GlobalModalHost';
 import {
@@ -369,6 +370,7 @@ export const RightLayout: React.FC = () => {
           </div>
           <div className="flex items-center gap-0">
             <ServerHealthButton />
+            <RecordingToolbarControl />
             <ClientNotificationButton />
             <ThemeToggle variant="dropdown" size="sm" />
             <SettingsButton />

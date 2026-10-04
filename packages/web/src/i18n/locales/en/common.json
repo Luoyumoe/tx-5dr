@@ -37,6 +37,7 @@
   "rightLayout": {
     "resetSplitToAuto": "Double-click to restore adaptive layout"
   },
+  "recording": { "start": "Start recording", "stop": "Stop recording", "error": "Recording error", "requestFailed": "Recording request failed" },
   "status": {
     "loading": "Loading...",
     "connected": "Connected",

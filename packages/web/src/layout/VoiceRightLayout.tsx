@@ -18,6 +18,7 @@ import { ThemeToggle } from '../components/common/ThemeToggle';
 import { ClientNotificationButton } from '../components/common/ClientNotificationButton';
 import { ServerHealthButton } from '../components/system/ServerHealthButton';
 import { SettingsButton } from '../components/common/SettingsButton';
+import { RecordingToolbarControl } from '../components/common/RecordingToolbarControl';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faKey, faLock, faRightFromBracket, faUser } from '@fortawesome/free-solid-svg-icons';
 import { useTranslation } from 'react-i18next';
@@ -244,6 +245,7 @@ export const VoiceRightLayout: React.FC = () => {
               </div>
               <div className="flex items-center gap-0">
                 <ServerHealthButton />
+                <RecordingToolbarControl />
                 <ClientNotificationButton />
                 <ThemeToggle variant="dropdown" size="sm" />
             <SettingsButton />

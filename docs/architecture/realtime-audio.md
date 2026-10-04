@@ -33,6 +33,29 @@ The digital chain is centered on the existing 12 kHz ring buffer. It serves FT8/
 - This path is not used for radio realtime listening in either voice or digital mode.
 - OpenWebRX preview remains a buffered preview use case and is not part of the native radio bypass.
 
+## Built-in Station Recording
+
+`RecordingService` owns one station-wide recording session shared by digital,
+voice, CW, and image modes. `DigitalRadioEngine` creates it with the engine and
+destroys it during engine shutdown. Operators control the session through the
+toolbar; administrators configure format, quality, source, and server-side
+absolute directory. Status is read through REST and polled by clients, so no
+global WebSocket event is required.
+
+- RX recordings subscribe to `nativeAudioInputData`; TX recordings subscribe to
+  `txMonitorAudioData`. Source filtering happens before encoding.
+- Low, medium, and high quality target 12, 24, and 48 kHz. `rubato-fft-node`
+  provides the existing resampler; FFT is not part of the recording path.
+- WAV uses `wav.FileWriter` with streamed PCM16 or PCM24. MP3 uses
+  `lamejs.Mp3Encoder`, frame encoding, and a flush at stop.
+- `both` keeps bounded RX/TX segments on monotonic timestamps, fills missing
+  sides with zero, sums and clamps mono samples to `[-1, 1]`. RX frames inside
+  the TX activity window are suppressed to avoid duplicate monitor audio.
+- Files use `recording-000001.wav` or `.mp3`. Startup directory scans recover the
+  highest sequence; allocation uses exclusive creation and never overwrites an
+  existing file. A write or encoder failure closes output and leaves an `error`
+  status without pretending a valid file was produced.
+
 ## Native Radio Bypass Chain
 
 The radio bypass exists to avoid hidden latency from the digital ring buffer.
