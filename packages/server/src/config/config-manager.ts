@@ -78,7 +78,9 @@ export interface AppConfig {
   profiles: InternalRadioProfile[];
   activeProfileId: string | null;
   recording?: {
+    prefix: string;
     format: 'wav' | 'mp3';
+    mp3Bitrate: 64 | 128 | 192 | 320;
     sampleRate: 16000 | 24000 | 44100 | 48000;
     bitDepth: 16 | 24 | 32;
     source: 'rx' | 'tx' | 'both';
@@ -264,7 +266,9 @@ const DEFAULT_CONFIG: AppConfig = {
     noticeVersion: 0,
   },
   recording: {
+    prefix: 'recording',
     format: 'wav',
+    mp3Bitrate: 128,
     sampleRate: 24000,
     bitDepth: 16,
     source: 'both',
