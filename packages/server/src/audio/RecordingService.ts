@@ -22,6 +22,9 @@ const MIX_LATENCY_MS = 100;
 const TX_ACTIVITY_WINDOW_MS = 200;
 const MIX_WRITE_CHUNK_SAMPLES = 4096;
 const SIGNAL_THRESHOLD = 0.001;
+const MP3_FRAME_SAMPLES = 1152;
+const MP3_FRAME_BYTES = MP3_FRAME_SAMPLES * 2;
+const MP3_WRITE_BATCH_BYTES = 64 * 1024;
 const RECORDING_FILE_PATTERN = /^(.+?)-(\d{8})-(\d{6})-(\d{6})\.(wav|mp3)$/i;
 const LEGACY_RECORDING_FILE_PATTERN = /^(.+?)-(\d{6})\.(wav|mp3)$/i;
 const DEFAULT_SETTINGS: RecordingSettings = {
@@ -45,6 +48,15 @@ interface Mp3EncoderConstructor {
 
 interface Mp3BundleContext {
   lamejs?: { Mp3Encoder?: Mp3EncoderConstructor };
+}
+
+interface Mp3RecordingState {
+  encoder: Mp3Encoder;
+  stream: WriteStream;
+  pendingPcm: Buffer;
+  pendingOutput: Buffer[];
+  pendingOutputBytes: number;
+  writeChain: Promise<void>;
 }
 
 interface ParsedRecordingFileName {
@@ -81,7 +93,7 @@ interface RecordingSession {
   finalPath: string;
   tempPath: string;
   writer: FileWriter | null;
-  pcmChunks: Buffer[];
+  mp3: Mp3RecordingState | null;
   lastTxActivityAt: number | null;
   mix: MixState | null;
   processing: Promise<void>;
@@ -272,7 +284,7 @@ export class RecordingService {
       finalPath: allocation.finalPath,
       tempPath: allocation.tempPath,
       writer: null,
-      pcmChunks: [],
+      mp3: null,
       lastTxActivityAt: null,
       mix: settings.source === 'both' ? {
         sampleRate: settings.sampleRate,
@@ -295,11 +307,24 @@ export class RecordingService {
           bitDepth: settings.bitDepth,
           flags: 'wx',
         } as unknown as ConstructorParameters<typeof FileWriter>[1]);
+      } else {
+        const Constructor = this.getMp3EncoderConstructor(settings.sampleRate, settings.mp3Bitrate);
+        const stream = createWriteStream(session.tempPath, { flags: 'wx' });
+        session.mp3 = {
+          encoder: new Constructor(1, settings.sampleRate, settings.mp3Bitrate),
+          stream,
+          pendingPcm: Buffer.alloc(0),
+          pendingOutput: [],
+          pendingOutputBytes: 0,
+          writeChain: Promise.resolve(),
+        };
+        await this.waitForOpen(stream);
       }
       this.session = session;
       this.error = null;
       return this.getStatus();
     } catch (error) {
+      session.mp3?.stream.destroy();
       await fs.rm(session.tempPath, { force: true }).catch(() => undefined);
       this.error = asError(error).message;
       throw error;
@@ -321,7 +346,7 @@ export class RecordingService {
   async list(): Promise<RecordingEntry[]> {
     const root = this.resolveRoot(this.settings.directory);
     await fs.mkdir(root, { recursive: true });
-    await this.cleanupTemporaryFiles(root);
+    await this.cleanupTemporaryFiles(root, this.session?.tempPath);
     await this.loadIndex(root);
     const indexed = new Set(this.entries.map(entry => entry.fileName));
     let changed = false;
@@ -381,7 +406,7 @@ export class RecordingService {
       await session.processing;
       if (session.mix) this.drainMix(session, session.mix.maxEnd);
       if (session.writer) await this.closeWav(session.writer);
-      if (session.format === 'mp3') await this.writeMp3(session);
+      if (session.mp3) await this.closeMp3(session.mp3);
       await fs.rename(session.tempPath, session.finalPath);
       const stat = await fs.stat(session.finalPath);
       const endedAt = Date.now();
@@ -401,6 +426,7 @@ export class RecordingService {
     } catch (error) {
       const failure = asError(error);
       this.error = failure.message;
+      session.mp3?.stream.destroy();
       await fs.rm(session.tempPath, { force: true }).catch(() => undefined);
       this.session = null;
       throw failure;
@@ -425,29 +451,55 @@ export class RecordingService {
     });
   }
 
-  private async writeMp3(session: RecordingSession): Promise<void> {
-    const Constructor = this.getMp3EncoderConstructor(session.sampleRate, session.mp3Bitrate);
-    const encoder = new Constructor(1, session.sampleRate, session.mp3Bitrate);
-    const stream = createWriteStream(session.tempPath, { flags: 'wx' });
+  private async closeMp3(state: Mp3RecordingState): Promise<void> {
     try {
-      await this.waitForOpen(stream);
-      const pcmData = Buffer.concat(session.pcmChunks);
-      for (let offset = 0; offset < pcmData.length; offset += 2304) {
-        const count = Math.min(1152, Math.floor((pcmData.length - offset) / 2));
+      if (state.pendingPcm.length > 0) {
+        const count = Math.floor(state.pendingPcm.length / 2);
         const samples = new Int16Array(count);
-        for (let index = 0; index < count; index += 1) samples[index] = pcmData.readInt16LE(offset + index * 2);
-        const encoded = encodedBuffer(encoder.encodeBuffer(samples));
-        if (encoded.length > 0) await this.writeStream(stream, encoded);
+        for (let index = 0; index < count; index += 1) samples[index] = state.pendingPcm.readInt16LE(index * 2);
+        state.pendingPcm = Buffer.alloc(0);
+        this.queueMp3Output(state, encodedBuffer(state.encoder.encodeBuffer(samples)));
       }
-      const tail = encodedBuffer(encoder.flush());
-      if (tail.length > 0) await this.writeStream(stream, tail);
-      await this.closeStream(stream);
-      session.pcmChunks = [];
+      this.queueMp3Output(state, encodedBuffer(state.encoder.flush()));
+      this.flushMp3Output(state);
+      await state.writeChain;
+      await this.closeStream(state.stream);
     } catch (error) {
-      stream.destroy();
-      await fs.rm(session.tempPath, { force: true }).catch(() => undefined);
+      state.stream.destroy();
       throw new Error(`MP3 recording failed: ${asError(error).message}`);
     }
+  }
+
+  private writeMp3Samples(state: Mp3RecordingState, samples: Float32Array): void {
+    const input = pcm(samples, 16);
+    const data = state.pendingPcm.length > 0 ? Buffer.concat([state.pendingPcm, input]) : input;
+    let offset = 0;
+    while (data.length - offset >= MP3_FRAME_BYTES) {
+      const frame = data.subarray(offset, offset + MP3_FRAME_BYTES);
+      const encodedSamples = new Int16Array(MP3_FRAME_SAMPLES);
+      for (let index = 0; index < MP3_FRAME_SAMPLES; index += 1) {
+        encodedSamples[index] = frame.readInt16LE(index * 2);
+      }
+      this.queueMp3Output(state, encodedBuffer(state.encoder.encodeBuffer(encodedSamples)));
+      offset += MP3_FRAME_BYTES;
+    }
+    state.pendingPcm = offset === data.length ? Buffer.alloc(0) : Buffer.from(data.subarray(offset));
+    if (state.pendingOutputBytes >= MP3_WRITE_BATCH_BYTES) this.flushMp3Output(state);
+  }
+
+  private queueMp3Output(state: Mp3RecordingState, encoded: Buffer): void {
+    if (encoded.length === 0) return;
+    state.pendingOutput.push(encoded);
+    state.pendingOutputBytes += encoded.length;
+  }
+
+  private flushMp3Output(state: Mp3RecordingState): void {
+    if (state.pendingOutputBytes === 0) return;
+    const output = Buffer.concat(state.pendingOutput, state.pendingOutputBytes);
+    state.pendingOutput = [];
+    state.pendingOutputBytes = 0;
+    state.writeChain = state.writeChain.then(() => this.writeStream(state.stream, output));
+    void state.writeChain.catch(() => undefined);
   }
 
   private async writeStream(stream: WriteStream, data: Buffer): Promise<void> {
@@ -475,7 +527,7 @@ export class RecordingService {
   private write(session: RecordingSession, samples: Float32Array): void {
     if (samples.length === 0) return;
     if (session.writer) session.writer.write(pcm(samples, session.bitDepth));
-    else session.pcmChunks.push(pcm(samples, 16));
+    else if (session.mp3) this.writeMp3Samples(session.mp3, samples);
   }
 
   private prepare = async (
@@ -626,11 +678,15 @@ export class RecordingService {
     }
   }
 
-  private async cleanupTemporaryFiles(root: string): Promise<void> {
+  private async cleanupTemporaryFiles(root: string, preservePath?: string): Promise<void> {
+    const preserved = preservePath ? path.resolve(preservePath) : null;
     try {
       const files = await fs.readdir(root);
       await Promise.all(files
-        .filter(file => file.endsWith('.part') && parseRecordingFileName(file.slice(0, -5)) !== null)
+        .filter(file => {
+          if (!file.endsWith('.part') || parseRecordingFileName(file.slice(0, -5)) === null) return false;
+          return preserved === null || path.resolve(root, file) !== preserved;
+        })
         .map(file => fs.rm(path.join(root, file), { force: true })));
     } catch {
       // Directory may be unavailable during shutdown.
