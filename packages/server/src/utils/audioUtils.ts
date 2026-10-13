@@ -299,14 +299,15 @@ export async function resampleAudioProfessional(
   inputSampleRate: number,
   outputSampleRate: number,
   channels: number = 1,
-  quality: number = 2
+  quality: number = 2,
+  streamKey = 'default',
 ): Promise<Float32Array> {
   if (inputSampleRate === outputSampleRate) {
     return samples; // 采样率相同，无需重采样
   }
 
   const nativeQuality = mapQuality(quality);
-  const cacheKey = `${inputSampleRate}-${outputSampleRate}-${channels}-${nativeQuality}`;
+  const cacheKey = `${streamKey}:${inputSampleRate}-${outputSampleRate}-${channels}-${nativeQuality}`;
 
   try {
     let resampler = resamplerCache.get(cacheKey);
@@ -386,12 +387,16 @@ export async function resampleTo12kHz(
 /**
  * 清理重采样器缓存
  */
-export function clearResamplerCache(): void {
-  for (const resampler of resamplerCache.values()) {
+export function clearResamplerCache(streamKey?: string): void {
+  const prefix = streamKey === undefined ? null : `${streamKey}:`;
+  for (const [cacheKey, resampler] of resamplerCache) {
+    if (prefix !== null && !cacheKey.startsWith(prefix)) continue;
     resampler.dispose();
+    resamplerCache.delete(cacheKey);
   }
-  resamplerCache.clear();
-  logger.debug('Rust resampler cache cleared');
+  logger.debug(streamKey === undefined
+    ? 'Rust resampler cache cleared'
+    : `Rust resampler stream cleared: ${streamKey}`);
 }
 
 /**
@@ -414,4 +419,4 @@ export async function batchResample(
   }
   
   return results;
-} 
+}

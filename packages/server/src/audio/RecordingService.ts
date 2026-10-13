@@ -14,11 +14,17 @@ import {
 } from '@tx5dr/contracts';
 import { ConfigManager } from '../config/config-manager.js';
 import type { AudioStreamManager, NativeAudioInputFrame } from './AudioStreamManager.js';
-import { resampleAudioProfessional } from '../utils/audioUtils.js';
+import { clearResamplerCache, resampleAudioProfessional } from '../utils/audioUtils.js';
 import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger('RecordingService');
-const MAX_MIX_PENDING_MS = 100;
+const MIX_LATENCY_MS = 100;
+const TX_ACTIVITY_WINDOW_MS = 200;
+const MIX_WRITE_CHUNK_SAMPLES = 4096;
+const SIGNAL_THRESHOLD = 0.001;
+const MP3_FRAME_SAMPLES = 1152;
+const MP3_FRAME_BYTES = MP3_FRAME_SAMPLES * 2;
+const MP3_WRITE_BATCH_BYTES = 64 * 1024;
 const RECORDING_FILE_PATTERN = /^(.+?)-(\d{8})-(\d{6})-(\d{6})\.(wav|mp3)$/i;
 const LEGACY_RECORDING_FILE_PATTERN = /^(.+?)-(\d{6})\.(wav|mp3)$/i;
 const DEFAULT_SETTINGS: RecordingSettings = {
@@ -44,14 +50,40 @@ interface Mp3BundleContext {
   lamejs?: { Mp3Encoder?: Mp3EncoderConstructor };
 }
 
+interface Mp3RecordingState {
+  encoder: Mp3Encoder;
+  stream: WriteStream;
+  pendingPcm: Buffer;
+  pendingOutput: Buffer[];
+  pendingOutputBytes: number;
+  writeChain: Promise<void>;
+}
+
 interface ParsedRecordingFileName {
   prefix: string;
   format: RecordingEntry['format'];
   sequence: number;
 }
 
+interface MixSegment {
+  start: number;
+  samples: Float32Array;
+}
+
+interface MixState {
+  sampleRate: number;
+  startedAt: number;
+  cursor: number;
+  latestTimestamp: number;
+  maxEnd: number;
+  nextSourceSample: Record<'rx' | 'tx', number>;
+  rx: MixSegment[];
+  tx: MixSegment[];
+}
+
 interface RecordingSession {
   id: string;
+  resamplerKey: string;
   startedAt: number;
   source: RecordingSettings['source'];
   format: RecordingSettings['format'];
@@ -61,9 +93,9 @@ interface RecordingSession {
   finalPath: string;
   tempPath: string;
   writer: FileWriter | null;
-  pcmChunks: Buffer[];
-  rxPending: Float32Array | null;
-  txPending: Float32Array | null;
+  mp3: Mp3RecordingState | null;
+  lastTxActivityAt: number | null;
+  mix: MixState | null;
   processing: Promise<void>;
 }
 
@@ -71,6 +103,14 @@ let cachedMp3Encoder: Mp3EncoderConstructor | null = null;
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function hasSignal(samples: Float32Array): boolean {
+  let sum = 0;
+  for (const sample of samples) {
+    if (Number.isFinite(sample)) sum += sample * sample;
+  }
+  return samples.length > 0 && Math.sqrt(sum / samples.length) >= SIGNAL_THRESHOLD;
 }
 
 function monoSamples(samples: Float32Array, channels: number): Float32Array {
@@ -234,6 +274,7 @@ export class RecordingService {
     const allocation = await this.allocateFile(root, settings.format, settings.prefix);
     const session: RecordingSession = {
       id: randomUUID(),
+      resamplerKey: `recording-${randomUUID()}`,
       startedAt: Date.now(),
       source: settings.source,
       format: settings.format,
@@ -243,9 +284,18 @@ export class RecordingService {
       finalPath: allocation.finalPath,
       tempPath: allocation.tempPath,
       writer: null,
-      pcmChunks: [],
-      rxPending: null,
-      txPending: null,
+      mp3: null,
+      lastTxActivityAt: null,
+      mix: settings.source === 'both' ? {
+        sampleRate: settings.sampleRate,
+        startedAt: Date.now(),
+        cursor: 0,
+        latestTimestamp: Date.now(),
+        maxEnd: 0,
+        nextSourceSample: { rx: 0, tx: 0 },
+        rx: [],
+        tx: [],
+      } : null,
       processing: Promise.resolve(),
     };
 
@@ -257,11 +307,24 @@ export class RecordingService {
           bitDepth: settings.bitDepth,
           flags: 'wx',
         } as unknown as ConstructorParameters<typeof FileWriter>[1]);
+      } else {
+        const Constructor = this.getMp3EncoderConstructor(settings.sampleRate, settings.mp3Bitrate);
+        const stream = createWriteStream(session.tempPath, { flags: 'wx' });
+        session.mp3 = {
+          encoder: new Constructor(1, settings.sampleRate, settings.mp3Bitrate),
+          stream,
+          pendingPcm: Buffer.alloc(0),
+          pendingOutput: [],
+          pendingOutputBytes: 0,
+          writeChain: Promise.resolve(),
+        };
+        await this.waitForOpen(stream);
       }
       this.session = session;
       this.error = null;
       return this.getStatus();
     } catch (error) {
+      session.mp3?.stream.destroy();
       await fs.rm(session.tempPath, { force: true }).catch(() => undefined);
       this.error = asError(error).message;
       throw error;
@@ -283,7 +346,7 @@ export class RecordingService {
   async list(): Promise<RecordingEntry[]> {
     const root = this.resolveRoot(this.settings.directory);
     await fs.mkdir(root, { recursive: true });
-    await this.cleanupTemporaryFiles(root);
+    await this.cleanupTemporaryFiles(root, this.session?.tempPath);
     await this.loadIndex(root);
     const indexed = new Set(this.entries.map(entry => entry.fileName));
     let changed = false;
@@ -341,9 +404,9 @@ export class RecordingService {
   private async finish(session: RecordingSession): Promise<ReturnType<RecordingService['getStatus']>> {
     try {
       await session.processing;
-      if (session.source === 'both') this.flushTail(session);
+      if (session.mix) this.drainMix(session, session.mix.maxEnd);
       if (session.writer) await this.closeWav(session.writer);
-      if (session.format === 'mp3') await this.writeMp3(session);
+      if (session.mp3) await this.closeMp3(session.mp3);
       await fs.rename(session.tempPath, session.finalPath);
       const stat = await fs.stat(session.finalPath);
       const endedAt = Date.now();
@@ -363,9 +426,13 @@ export class RecordingService {
     } catch (error) {
       const failure = asError(error);
       this.error = failure.message;
+      session.mp3?.stream.destroy();
       await fs.rm(session.tempPath, { force: true }).catch(() => undefined);
       this.session = null;
       throw failure;
+    } finally {
+      clearResamplerCache(`${session.resamplerKey}-rx`);
+      clearResamplerCache(`${session.resamplerKey}-tx`);
     }
   }
 
@@ -384,29 +451,55 @@ export class RecordingService {
     });
   }
 
-  private async writeMp3(session: RecordingSession): Promise<void> {
-    const Constructor = this.getMp3EncoderConstructor(session.sampleRate, session.mp3Bitrate);
-    const encoder = new Constructor(1, session.sampleRate, session.mp3Bitrate);
-    const stream = createWriteStream(session.tempPath, { flags: 'wx' });
+  private async closeMp3(state: Mp3RecordingState): Promise<void> {
     try {
-      await this.waitForOpen(stream);
-      const pcmData = Buffer.concat(session.pcmChunks);
-      for (let offset = 0; offset < pcmData.length; offset += 2304) {
-        const count = Math.min(1152, Math.floor((pcmData.length - offset) / 2));
+      if (state.pendingPcm.length > 0) {
+        const count = Math.floor(state.pendingPcm.length / 2);
         const samples = new Int16Array(count);
-        for (let index = 0; index < count; index += 1) samples[index] = pcmData.readInt16LE(offset + index * 2);
-        const encoded = encodedBuffer(encoder.encodeBuffer(samples));
-        if (encoded.length > 0) await this.writeStream(stream, encoded);
+        for (let index = 0; index < count; index += 1) samples[index] = state.pendingPcm.readInt16LE(index * 2);
+        state.pendingPcm = Buffer.alloc(0);
+        this.queueMp3Output(state, encodedBuffer(state.encoder.encodeBuffer(samples)));
       }
-      const tail = encodedBuffer(encoder.flush());
-      if (tail.length > 0) await this.writeStream(stream, tail);
-      await this.closeStream(stream);
-      session.pcmChunks = [];
+      this.queueMp3Output(state, encodedBuffer(state.encoder.flush()));
+      this.flushMp3Output(state);
+      await state.writeChain;
+      await this.closeStream(state.stream);
     } catch (error) {
-      stream.destroy();
-      await fs.rm(session.tempPath, { force: true }).catch(() => undefined);
+      state.stream.destroy();
       throw new Error(`MP3 recording failed: ${asError(error).message}`);
     }
+  }
+
+  private writeMp3Samples(state: Mp3RecordingState, samples: Float32Array): void {
+    const input = pcm(samples, 16);
+    const data = state.pendingPcm.length > 0 ? Buffer.concat([state.pendingPcm, input]) : input;
+    let offset = 0;
+    while (data.length - offset >= MP3_FRAME_BYTES) {
+      const frame = data.subarray(offset, offset + MP3_FRAME_BYTES);
+      const encodedSamples = new Int16Array(MP3_FRAME_SAMPLES);
+      for (let index = 0; index < MP3_FRAME_SAMPLES; index += 1) {
+        encodedSamples[index] = frame.readInt16LE(index * 2);
+      }
+      this.queueMp3Output(state, encodedBuffer(state.encoder.encodeBuffer(encodedSamples)));
+      offset += MP3_FRAME_BYTES;
+    }
+    state.pendingPcm = offset === data.length ? Buffer.alloc(0) : Buffer.from(data.subarray(offset));
+    if (state.pendingOutputBytes >= MP3_WRITE_BATCH_BYTES) this.flushMp3Output(state);
+  }
+
+  private queueMp3Output(state: Mp3RecordingState, encoded: Buffer): void {
+    if (encoded.length === 0) return;
+    state.pendingOutput.push(encoded);
+    state.pendingOutputBytes += encoded.length;
+  }
+
+  private flushMp3Output(state: Mp3RecordingState): void {
+    if (state.pendingOutputBytes === 0) return;
+    const output = Buffer.concat(state.pendingOutput, state.pendingOutputBytes);
+    state.pendingOutput = [];
+    state.pendingOutputBytes = 0;
+    state.writeChain = state.writeChain.then(() => this.writeStream(state.stream, output));
+    void state.writeChain.catch(() => undefined);
   }
 
   private async writeStream(stream: WriteStream, data: Buffer): Promise<void> {
@@ -434,57 +527,48 @@ export class RecordingService {
   private write(session: RecordingSession, samples: Float32Array): void {
     if (samples.length === 0) return;
     if (session.writer) session.writer.write(pcm(samples, session.bitDepth));
-    else session.pcmChunks.push(pcm(samples, 16));
+    else if (session.mp3) this.writeMp3Samples(session.mp3, samples);
   }
 
-  private flushTail(session: RecordingSession): void {
-    const rx = session.rxPending;
-    const tx = session.txPending;
-    const overlap = Math.min(rx?.length ?? 0, tx?.length ?? 0);
-    if (overlap > 0) {
-      const mixed = new Float32Array(overlap);
-      for (let index = 0; index < overlap; index += 1) {
-        mixed[index] = ((rx?.[index] ?? 0) + (tx?.[index] ?? 0)) * 0.5;
-      }
-      this.write(session, mixed);
-    }
-    if ((rx?.length ?? 0) > overlap) this.write(session, rx!.slice(overlap));
-    if ((tx?.length ?? 0) > overlap) this.write(session, tx!.slice(overlap));
-    session.rxPending = null;
-    session.txPending = null;
-  }
-
-  private prepare = async (samples: Float32Array, inputRate: number, session: RecordingSession): Promise<Float32Array> => (
+  private prepare = async (
+    samples: Float32Array,
+    inputRate: number,
+    session: RecordingSession,
+    source: 'rx' | 'tx',
+  ): Promise<Float32Array> => (
     inputRate === session.sampleRate
       ? new Float32Array(samples)
-      : resampleAudioProfessional(samples, inputRate, session.sampleRate, 1, 2)
+      : resampleAudioProfessional(samples, inputRate, session.sampleRate, 1, 2, `${session.resamplerKey}-${source}`)
   );
 
   private onRx = (frame: NativeAudioInputFrame): void => {
     const session = this.session;
     if (!session || this.stopping || (session.source !== 'rx' && session.source !== 'both')) return;
+    const timestamp = Number.isFinite(frame.timestamp) ? frame.timestamp : Date.now();
+    if (
+      session.source === 'both'
+      && session.lastTxActivityAt !== null
+      && timestamp - session.lastTxActivityAt < TX_ACTIVITY_WINDOW_MS
+    ) return;
     this.enqueue(session, async () => {
-      const samples = await this.prepare(monoSamples(frame.samples, frame.channels), frame.sampleRate, session);
+      const rawSamples = monoSamples(frame.samples, frame.channels);
+      const samples = await this.prepare(rawSamples, frame.sampleRate, session, 'rx');
       if (!this.session || this.session.id !== session.id) return;
       if (session.source === 'rx') this.write(session, samples);
-      else {
-        session.rxPending = session.rxPending ? this.concat(session.rxPending, samples) : samples;
-        this.flushMixed(session);
-      }
+      else await this.appendMix(session, 'rx', samples, timestamp);
     });
   };
 
   private onTx = ({ samples, sampleRate }: { samples: Float32Array; sampleRate: number }): void => {
     const session = this.session;
     if (!session || this.stopping || (session.source !== 'tx' && session.source !== 'both')) return;
+    const timestamp = Date.now();
+    if (session.source === 'both' && hasSignal(samples)) session.lastTxActivityAt = timestamp;
     this.enqueue(session, async () => {
-      const prepared = await this.prepare(samples, sampleRate, session);
+      const prepared = await this.prepare(samples, sampleRate, session, 'tx');
       if (!this.session || this.session.id !== session.id) return;
       if (session.source === 'tx') this.write(session, prepared);
-      else {
-        session.txPending = session.txPending ? this.concat(session.txPending, prepared) : prepared;
-        this.flushMixed(session);
-      }
+      else await this.appendMix(session, 'tx', prepared, timestamp);
     });
   };
 
@@ -494,36 +578,56 @@ export class RecordingService {
     });
   }
 
-  private flushMixed(session: RecordingSession): void {
-    if (!session.rxPending && !session.txPending) return;
-    if (session.rxPending && session.txPending) {
-      const count = Math.min(session.rxPending.length, session.txPending.length);
-      if (count > 0) {
-        const mixed = new Float32Array(count);
-        for (let index = 0; index < count; index += 1) mixed[index] = (session.rxPending[index]! + session.txPending[index]!) * 0.5;
-        this.write(session, mixed);
-        session.rxPending = session.rxPending.slice(count);
-        session.txPending = session.txPending.slice(count);
+  private async appendMix(
+    session: RecordingSession,
+    source: 'rx' | 'tx',
+    samples: Float32Array,
+    timestamp: number,
+  ): Promise<void> {
+    const mix = session.mix;
+    if (!mix || samples.length === 0) return;
+    if (mix.maxEnd === 0 && mix.cursor === 0 && mix.rx.length === 0 && mix.tx.length === 0) {
+      mix.startedAt = timestamp;
+    }
+    mix.latestTimestamp = Math.max(mix.latestTimestamp, timestamp);
+    const timestampOffset = Math.max(0, Math.floor(((timestamp - mix.startedAt) / 1000) * mix.sampleRate));
+    const start = Math.max(timestampOffset, mix.nextSourceSample[source], mix.cursor);
+    mix[source].push({ start, samples: new Float32Array(samples) });
+    mix.nextSourceSample[source] = start + samples.length;
+    mix.maxEnd = Math.max(mix.maxEnd, start + samples.length);
+    const watermark = Math.floor(((mix.latestTimestamp - mix.startedAt - MIX_LATENCY_MS) / 1000) * mix.sampleRate);
+    if (watermark > mix.cursor) this.drainMix(session, watermark);
+  }
+
+  private drainMix(session: RecordingSession, target: number): void {
+    const mix = session.mix;
+    if (!mix) return;
+    const end = Math.max(mix.cursor, Math.min(target, mix.maxEnd));
+    while (mix.cursor < end) {
+      const count = Math.min(MIX_WRITE_CHUNK_SAMPLES, end - mix.cursor);
+      const mixed = new Float32Array(count);
+      this.readMixSource(mix.rx, mix.cursor, mixed);
+      this.readMixSource(mix.tx, mix.cursor, mixed);
+      for (let index = 0; index < mixed.length; index += 1) {
+        mixed[index] = Math.max(-1, Math.min(1, mixed[index]!));
       }
-    }
-    const pendingLimit = Math.max(1, Math.floor(session.sampleRate * MAX_MIX_PENDING_MS / 1000));
-    if (session.rxPending && session.rxPending.length > pendingLimit) {
-      const flushCount = session.rxPending.length - pendingLimit;
-      this.write(session, session.rxPending.slice(0, flushCount));
-      session.rxPending = session.rxPending.slice(flushCount);
-    }
-    if (session.txPending && session.txPending.length > pendingLimit) {
-      const flushCount = session.txPending.length - pendingLimit;
-      this.write(session, session.txPending.slice(0, flushCount));
-      session.txPending = session.txPending.slice(flushCount);
+      this.write(session, mixed);
+      mix.cursor += count;
     }
   }
 
-  private concat(left: Float32Array, right: Float32Array): Float32Array {
-    const result = new Float32Array(left.length + right.length);
-    result.set(left);
-    result.set(right, left.length);
-    return result;
+  private readMixSource(segments: MixSegment[], cursor: number, output: Float32Array): void {
+    while (segments.length > 0 && segments[0]!.start + segments[0]!.samples.length <= cursor) segments.shift();
+    for (const segment of segments) {
+      if (segment.start >= cursor + output.length) break;
+      const from = Math.max(cursor, segment.start);
+      const to = Math.min(cursor + output.length, segment.start + segment.samples.length);
+      for (let position = from; position < to; position += 1) {
+        const sourceIndex = position - segment.start;
+        const outputIndex = position - cursor;
+        output[outputIndex] = Math.max(-1, Math.min(1, output[outputIndex]! + (segment.samples[sourceIndex] ?? 0)));
+      }
+    }
   }
 
   private onAudioError = (error: Error): void => {
@@ -574,11 +678,15 @@ export class RecordingService {
     }
   }
 
-  private async cleanupTemporaryFiles(root: string): Promise<void> {
+  private async cleanupTemporaryFiles(root: string, preservePath?: string): Promise<void> {
+    const preserved = preservePath ? path.resolve(preservePath) : null;
     try {
       const files = await fs.readdir(root);
       await Promise.all(files
-        .filter(file => file.endsWith('.part') && parseRecordingFileName(file.slice(0, -5)) !== null)
+        .filter(file => {
+          if (!file.endsWith('.part') || parseRecordingFileName(file.slice(0, -5)) === null) return false;
+          return preserved === null || path.resolve(root, file) !== preserved;
+        })
         .map(file => fs.rm(path.join(root, file), { force: true })));
     } catch {
       // Directory may be unavailable during shutdown.

@@ -95,6 +95,18 @@ describe('RecordingService', () => {
     expect(files[1]).toMatch(/^recording-\d{8}-\d{6}-000002\.wav$/);
   });
 
+  it('preserves the active temporary file when listing recordings', async () => {
+    const { manager, service, directory } = await setup();
+    await service.start();
+    manager.emit('nativeAudioInputData', rxFrame(new Float32Array([0.25])));
+
+    expect(await service.list()).toEqual([]);
+    await service.stop();
+
+    expect((await readdir(directory)).some(file => file.endsWith('.wav'))).toBe(true);
+    expect((await readdir(directory)).some(file => file.endsWith('.part'))).toBe(false);
+  });
+
   it('uses configurable filename prefix', async () => {
     const { manager, service, directory } = await setup({ prefix: 'station-a' });
     await service.start();
@@ -117,6 +129,18 @@ describe('RecordingService', () => {
     expect(output.readInt16LE(46)).toBeCloseTo(-8192, -1);
   });
 
+  it('aligns RX and TX on recording timestamps in both-source mode', async () => {
+    const { manager, service, directory } = await setup({ source: 'both' });
+    await service.start();
+    manager.emit('nativeAudioInputData', rxFrame(new Float32Array([0.25, 0.25])));
+    manager.emit('txRecordingAudioData', { samples: new Float32Array([0.5, 0.5]), sampleRate: 24000 });
+    await service.stop();
+
+    const output = await readFile(join(directory, recordingFile(await readdir(directory), 'wav')));
+    expect(output.readInt16LE(44)).toBeCloseTo(24575, -1);
+    expect(output.readInt16LE(46)).toBeCloseTo(24575, -1);
+  });
+
   it('writes a usable MP3 through the bundled lamejs encoder', async () => {
     const { manager, service, directory } = await setup({ format: 'mp3', mp3Bitrate: 320 });
     expect(service.isMp3Supported()).toBe(true);
@@ -128,5 +152,22 @@ describe('RecordingService', () => {
     expect(output.length).toBeGreaterThan(100);
     expect(output[0]).toBeGreaterThanOrEqual(0);
     expect((await readdir(directory)).some(file => file.endsWith('.part'))).toBe(false);
+  });
+
+  it('encodes long MP3 recordings while capture is active', async () => {
+    const { manager, service, directory } = await setup({ format: 'mp3', mp3Bitrate: 320 });
+    await service.start();
+    const samples = new Float32Array(1152).fill(0.2);
+    for (let index = 0; index < 400; index += 1) {
+      manager.emit('nativeAudioInputData', rxFrame(samples));
+    }
+
+    const partial = (await readdir(directory)).find(file => file.endsWith('.mp3.part'));
+    expect(partial).toBeDefined();
+    expect((await readFile(join(directory, partial!))).length).toBeGreaterThan(0);
+
+    await service.stop();
+    expect((await readdir(directory)).some(file => file.endsWith('.mp3.part'))).toBe(false);
+    expect((await readFile(join(directory, recordingFile(await readdir(directory), 'mp3')))).length).toBeGreaterThan(100);
   });
 });
