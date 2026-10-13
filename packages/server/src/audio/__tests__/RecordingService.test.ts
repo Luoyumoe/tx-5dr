@@ -117,6 +117,18 @@ describe('RecordingService', () => {
     expect(output.readInt16LE(46)).toBeCloseTo(-8192, -1);
   });
 
+  it('aligns RX and TX on recording timestamps in both-source mode', async () => {
+    const { manager, service, directory } = await setup({ source: 'both' });
+    await service.start();
+    manager.emit('nativeAudioInputData', rxFrame(new Float32Array([0.25, 0.25])));
+    manager.emit('txRecordingAudioData', { samples: new Float32Array([0.5, 0.5]), sampleRate: 24000 });
+    await service.stop();
+
+    const output = await readFile(join(directory, recordingFile(await readdir(directory), 'wav')));
+    expect(output.readInt16LE(44)).toBeCloseTo(24575, -1);
+    expect(output.readInt16LE(46)).toBeCloseTo(24575, -1);
+  });
+
   it('writes a usable MP3 through the bundled lamejs encoder', async () => {
     const { manager, service, directory } = await setup({ format: 'mp3', mp3Bitrate: 320 });
     expect(service.isMp3Supported()).toBe(true);

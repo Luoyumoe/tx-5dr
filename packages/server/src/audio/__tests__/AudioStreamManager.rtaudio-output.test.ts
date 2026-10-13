@@ -719,6 +719,27 @@ describe('AudioStreamManager RtAudio output diagnostics', () => {
     expect(buffer.readInt16LE(6)).toBe(0);
   });
 
+  it('records each RtAudio voice TX chunk once', async () => {
+    const manager = new AudioStreamManager();
+    manager.setVolumeGain(0.1);
+    await manager.startOutput();
+    const recorded: Float32Array[] = [];
+    manager.on('txRecordingAudioData', ({ samples }) => recorded.push(samples));
+
+    const writeOk = await (manager as unknown as {
+      writeVoiceTxOutputChunk: (samples: Float32Array, sink: { kind: 'rtaudio'; available: boolean; outputSampleRate: number; outputBufferSize: number }) => Promise<boolean>;
+    }).writeVoiceTxOutputChunk(new Float32Array([0.5, -0.5]), {
+      kind: 'rtaudio',
+      available: true,
+      outputSampleRate: 48000,
+      outputBufferSize: 64,
+    });
+
+    expect(writeOk).toBe(true);
+    expect(recorded).toHaveLength(1);
+    expect(Array.from(recorded[0]!)).toEqual([0.5, -0.5]);
+  });
+
   it('emits a runtime error when Windows writes are submitted but RtAudio never consumes frames', async () => {
     process.env.TX5DR_FORCE_WINDOWS_AUDIO_WATCHDOG = '1';
     mockRtAudioState.consumeOnWrite = false;

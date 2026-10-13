@@ -5,8 +5,11 @@
 ## Recording Boundary
 
 Server recording subscribes to `AudioStreamManager` native RX frames and the
-pre-gain TX recording tap. It is independent of operating mode, monitor volume,
-and realtime transport.
+single TX recording tap (`txRecordingAudioData`) at the output boundary. The
+tap is emitted once per TX chunk, before the backend write, and is independent
+of the realtime monitor stream. RX and TX use separate streaming resampler
+state for each recording session, so interleaved frames cannot contaminate one
+another.
 Configured RX/TX sources are mixed into one server-side file. Recording stops
 on explicit stop or audio/runtime failure; completed files remain downloadable.
 Configured paths are resolved as the configured server recording directory, and

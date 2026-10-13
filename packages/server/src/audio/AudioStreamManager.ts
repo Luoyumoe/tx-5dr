@@ -1678,12 +1678,17 @@ export class AudioStreamManager extends EventEmitter<AudioStreamEvents> {
     targetFrames: number,
     gain: number,
     includeMonitor: boolean,
+    emitRecording = true,
   ): EncodedOutputChunk {
     const channels = this.outputChannels;
     const bytesPerSample = this.getOutputBytesPerSample();
     const buffer = Buffer.allocUnsafe(targetFrames * channels * bytesPerSample);
     const monitorChunk = includeMonitor ? new Float32Array(chunk.length) : null;
-    if (chunk.length > 0) this.emit('txRecordingAudioData', { samples: new Float32Array(chunk), sampleRate: this.outputSampleRate });
+    // Voice TX is already tapped by writeVoiceTxOutputChunk. Keep this tap
+    // disabled there, otherwise RtAudio records every voice frame twice.
+    if (emitRecording && chunk.length > 0) {
+      this.emit('txRecordingAudioData', { samples: new Float32Array(chunk), sampleRate: this.outputSampleRate });
+    }
     let peak = 0;
     let sumSquares = 0;
 
@@ -3888,6 +3893,7 @@ export class AudioStreamManager extends EventEmitter<AudioStreamEvents> {
         samples,
         Math.max(1, sink.outputBufferSize || samples.length),
         1,
+        false,
         false,
       );
       this.rtAudioOutput.write(encoded.buffer);
